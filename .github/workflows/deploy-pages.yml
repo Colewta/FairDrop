@@ -36,6 +36,8 @@ jobs:
 
       - name: Build frontend
         working-directory: Frontend
+        env:
+          VITE_API_URL: https://fairdrop-si7p.onrender.com/
         run: npm run build
 
       - name: Setup Pages
