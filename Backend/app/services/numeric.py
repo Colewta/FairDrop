@@ -1,12 +1,13 @@
 import re
 
+import numpy as np
 import pandas as pd
 
 
 def parse_numeric(series: pd.Series) -> pd.Series:
     """Aceita números regionais sem extrair dígitos de códigos alfanuméricos."""
     if pd.api.types.is_numeric_dtype(series):
-        return pd.to_numeric(series, errors="coerce")
+        return pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan)
 
     def normalize(value):
         if pd.isna(value):
@@ -20,4 +21,4 @@ def parse_numeric(series: pd.Series) -> pd.Series:
             text = text.replace(",", ".")
         return text
 
-    return pd.to_numeric(series.map(normalize), errors="coerce")
+    return pd.to_numeric(series.map(normalize), errors="coerce").replace([np.inf, -np.inf], np.nan)

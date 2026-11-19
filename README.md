@@ -32,13 +32,48 @@ Os modelos demonstrativos servem para conhecer a aplicação, não para decisõe
 O **Modo técnico** abre detalhes de features, grupos, limiares, calibração,
 validação cruzada e métricas. O modo simples usa configurações documentadas abaixo.
 
+## Tratamento automático de dados incompletos
+
+A importação aproveita os registros utilizáveis e apresenta **Tratamento
+automático dos dados**, com contagens, colunas afetadas e até 20 números de linhas
+do arquivo de origem por tipo de ajuste. O arquivo enviado não é sobrescrito.
+
+- Linhas idênticas são reduzidas à primeira ocorrência; linhas totalmente vazias
+  e cabeçalhos repetidos no meio dos dados são removidos.
+- Em CSV, campos faltando no fim da linha são marcados como ausentes, e campos
+  extras vazios são retirados. Linhas com estrutura irrecuperável são ignoradas
+  com aviso, preservando as demais, inclusive campos multilinha válidos.
+- Matrículas repetidas ficam com o registro mais completo; em empate, o primeiro
+  do arquivo. No treino, todos os registros de uma matrícula com resultados
+  contraditórios são removidos, em vez de escolher um resultado arbitrariamente.
+- Registros sem resultado conhecido ou com resultado incompatível com uma regra
+  numérica são retirados do treino. O resultado nunca é preenchido artificialmente.
+- Valores numéricos e datas incompatíveis nas informações de previsão viram
+  ausências e recebem a imputação aprendida no treino. Tipos são inferidos no
+  treino, inclusive dentro dos folds; números regionais e zeros em IDs são preservados.
+- Colunas selecionadas que estão vazias ou constantes no treino são excluídas
+  automaticamente. Atributos sensíveis ausentes continuam ausentes na análise de
+  equidade; não são inventados grupos para completar métricas.
+- Na avaliação atual, uma matrícula ausente recebe identificação exclusiva do
+  lote. Esse caso pode ser avaliado, mas não é ligado ao histórico de outro aluno.
+
+O relatório fica salvo na base, na ficha do modelo e na avaliação. Bases antigas
+continuam compatíveis. Ainda é necessário ter dados suficientes para treinar,
+duas situações de resultado e as colunas exigidas pelo modelo ao prever.
+
 ## Explicar resultados e mitigar vieses
 
 Na revisão do aluno, os fatores agora incluem contexto histórico, perguntas para
 investigação, simulação de indicadores acadêmicos e um plano de revisão que pode
 ser salvo pelo tutor. Na ficha do modelo, **Mitigação de vieses** compara erros por
-grupo e permite executar reponderação AIF360, mostrando antes/depois no teste.
+grupo e permite escolher reponderação, reamostragem, LFR, aprendizado adversarial,
+restrições ou regularização de fairness, mostrando antes/depois no teste.
 O original é preservado e uma piora não é apresentada como melhoria.
+
+O [guia de experimentos de mitigação](MITIGATION_EXPERIMENTS.md) explica como aplicar
+as técnicas, as implementações AIF360/Fairlearn e próprias, os requisitos e as
+fórmulas. A interface verifica os grupos, permite aplicar a variante mitigada e
+exporta o registro com parâmetros, versões, métricas e ajustes no treino.
 
 Veja o [guia de explicabilidade e vieses](EXPLICABILIDADE_E_VIESES.md) para o passo a
 passo, metodologia, limites e referências para o trabalho acadêmico.
@@ -151,8 +186,9 @@ React → FastAPI → leitura por conteúdo → profiler/semântica/leakage/qual
 - Logistic Regression, Random Forest, KNN e XGBoost compartilham a mesma divisão,
   com `random_state=42`. Erros de um algoritmo não interrompem os restantes.
 - Mediana, moda, categorias e scaler são ajustados somente no treino. Categorias
-  novas são aceitas. Colunas extras são ignoradas; faltantes/tipos incompatíveis
-  produzem uma mensagem com a coluna que precisa de correção.
+  novas são aceitas. Colunas extras são ignoradas; valores numéricos e datas
+  incompatíveis são tratados como ausentes com aviso. Colunas obrigatórias
+  ausentes ainda exigem corrigir a estrutura do arquivo.
 - IDs, resultado, constantes, sensíveis e leakage HIGH ficam fora das features
   por padrão. No modo técnico, sensíveis e vazamentos revisados podem ser
   autorizados explicitamente; IDs e resultado nunca entram no modelo.
@@ -164,9 +200,10 @@ React → FastAPI → leitura por conteúdo → profiler/semântica/leakage/qual
   limiar configurado. O vencedor não é reajustado depois da avaliação final.
 - Pesos de classe são usados em Logistic Regression, Random Forest e XGBoost.
   KNN não suporta esse ajuste. Não há SMOTE automático.
-- Exige ao menos 30 registros e 8 de cada classe binária; IDs confirmados repetidos
-  são rejeitados para impedir o mesmo aluno em divisões diferentes. Sem um ID
-  confirmado não é possível garantir independência por aluno.
+- Exige ao menos 30 registros e 8 de cada classe binária após a limpeza.
+  Matrículas repetidas são consolidadas antes da divisão; resultados conflitantes
+  para a mesma matrícula são removidos do treino com aviso. Sem um ID confirmado
+  não é possível garantir independência por aluno.
 
 ### Seleção dos modelos
 

@@ -3,10 +3,11 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 from app.core.config import RISK_THRESHOLDS
-from app.schemas.dataset import DatasetProfile
+from app.schemas.dataset import CleaningReport, DatasetProfile
 
 Algorithm = Literal["logistic", "rf", "knn", "xgboost"]
 Strategy = Literal["best_predictive", "best_fairness", "best_balanced"]
+MitigationMethod = Literal["none", "reweighing", "resampling", "lfr", "adversarial", "constraints", "regularization"]
 
 
 class TargetRule(BaseModel):
@@ -15,8 +16,12 @@ class TargetRule(BaseModel):
 
 
 class TrainingConfig(BaseModel):
-    mitigation: Literal["none", "reweighing"] = "none"
+    source_model_id: str | None = None
+    mitigation: MitigationMethod = "none"
     mitigation_features: list[str] = Field(default_factory=list)
+    mitigation_strength: float = Field(default=0.5, ge=0, le=1, allow_inf_nan=False)
+    fairness_constraint: Literal["demographic_parity", "equalized_odds"] = "demographic_parity"
+    prefer_mitigated: bool = False
     dataset_id: str
     target: str
     positive_class: str
@@ -87,7 +92,7 @@ class FairnessReport(BaseModel):
 
 
 class CandidateResult(BaseModel):
-    variant: Literal["baseline", "reweighing"] = "baseline"
+    variant: str = "baseline"
     algorithm: str
     validation: Metrics
     fairness: FairnessReport
@@ -124,12 +129,16 @@ class Explanation(BaseModel):
 
 
 class MitigationReport(BaseModel):
+    stage: str = ""
+    implementation: str = ""
+    parameters: dict = Field(default_factory=dict)
+    audit: dict = Field(default_factory=dict)
     method: str = "none"
     status: str = "not_requested"
     selected: bool = False
     features: list[str] = Field(default_factory=list)
     algorithm: str | None = None
-    message: str = "Nenhum experimento de reponderação foi solicitado."
+    message: str = "Nenhuma técnica de mitigação foi solicitada."
     before_metrics: Metrics | None = None
     after_metrics: Metrics | None = None
     before_fairness: FairnessReport | None = None
@@ -139,6 +148,7 @@ class MitigationReport(BaseModel):
 
 
 class ModelCard(BaseModel):
+    cleaning_report: CleaningReport | None = None
     mitigation: MitigationReport = Field(default_factory=MitigationReport)
     is_demo: bool = False
     id: str
@@ -202,6 +212,7 @@ class StudentPrediction(BaseModel):
 
 
 class PredictionBatch(BaseModel):
+    cleaning_report: CleaningReport | None = None
     group_filters: dict[str, list[str]] = Field(default_factory=dict)
     id: str
     model_id: str
@@ -233,6 +244,10 @@ class StudentDetail(BaseModel):
 class MitigationRequest(BaseModel):
     feature: str
     strategy: Strategy = "best_balanced"
+    method: MitigationMethod = "reweighing"
+    strength: float = Field(default=0.5, ge=0, le=1, allow_inf_nan=False)
+    constraint: Literal["demographic_parity", "equalized_odds"] = "demographic_parity"
+    apply: bool = False
 
 
 class ScenarioRequest(BaseModel):

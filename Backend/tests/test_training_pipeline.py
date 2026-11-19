@@ -56,8 +56,9 @@ def test_invalid_weights_and_repeated_students(students):
     with pytest.raises(DatasetError):
         ModelSelector("best_balanced", {"recall": -1})
     students.loc[1, "matricula"] = students.loc[0, "matricula"]
-    with pytest.raises(DatasetError, match="múltiplos"):
-        AutoMLService().train(students, TrainingConfig(dataset_id="test", target="situacao", positive_class="Evadido", identifier_column="matricula"))
+    result = AutoMLService().train(students, TrainingConfig(dataset_id="test", target="situacao", positive_class="Evadido", identifier_column="matricula", algorithms=["logistic"]))
+    assert sum(result.split.values()) < len(students)
+    assert any(issue["code"] in {"REPEATED_IDENTIFIERS", "CONFLICTING_RESULTS"} for issue in result.cleaning_report["issues"])
 
 
 def test_fairness_known_disparity_and_missing_groups():
@@ -90,3 +91,28 @@ def test_feature_selection_does_not_learn_from_holdout(students):
     output = AutoMLService().train(students, config)
     assert "observacao" not in output.features
     assert output.split["train"] == len(train)
+
+
+def test_post_outcome_dates_cannot_enter_training_without_explicit_review(students):
+    post_event = ["data_alteracao_situacao", "ano_alteracao_situacao", "periodo_alteracao_situacao"]
+    for column in post_event:
+        students[column] = np.where(students.situacao == "Evadido", "2026-06-01", "2025-01-01")
+    config = TrainingConfig(dataset_id="test", target="situacao", positive_class="Evadido",
+                            identifier_column="matricula", algorithms=["rf"])
+    output = AutoMLService().train(students, config)
+    assert not set(post_event) & set(output.features)
+    assert all(any(column in warning and "excluída" in warning for warning in output.warnings) for column in post_event)
+    config.prediction_features = ["frequencia", post_event[0]]
+    with pytest.raises(DatasetError, match="leakage"):
+        AutoMLService().train(students, config)
+
+
+def test_perfect_test_score_is_preserved_and_flagged_for_review():
+    frame = pd.DataFrame({"matricula": [f"RA{i:04}" for i in range(240)],
+                          "nota": [0, 1] * 120, "situacao": ["Ativo", "Evadido"] * 120})
+    config = TrainingConfig(dataset_id="test", target="situacao", positive_class="Evadido",
+                            identifier_column="matricula", algorithms=["rf"], reviewed_leakage=["nota"])
+    output = AutoMLService().train(frame, config)
+    assert output.metrics.accuracy == 1.0
+    assert any("100% de acurácia" in warning for warning in output.warnings)
+    assert any("Revise a disponibilidade" in warning for warning in output.warnings)

@@ -1,7 +1,8 @@
-"""Leitura pelo conteúdo, com correções estruturais transparentes e sem descartar registros inválidos."""
+"""Leitura tolerante pelo conteúdo, com limpeza rastreável das linhas recuperáveis."""
 import csv
 import re
-from io import BytesIO, StringIO
+from io import BytesIO
+from itertools import islice
 from pathlib import Path
 from xml.etree.ElementTree import ParseError
 from zipfile import BadZipFile, ZipFile
@@ -11,6 +12,7 @@ from fastapi import UploadFile
 
 from app.core.config import MAX_COLUMNS, MAX_ROWS, MAX_UPLOAD_BYTES
 from app.schemas.dataset import DatasetError
+from app.services.data_cleaning import add_issue, clean_table, report_for
 
 
 def _header_row(rows: list[list]) -> int:
@@ -61,38 +63,84 @@ def _decode(content: bytes) -> tuple[str, str]:
 
 def _read_csv(content: bytes, warnings: list[str]) -> tuple[pd.DataFrame, dict]:
     text, encoding = _decode(content)
-    text = text.lstrip("\r\n")
-    first_line = text.splitlines()[0] if text.splitlines() else ""
+    lines = text.splitlines(keepends=True)
+    start = next((i for i, line in enumerate(lines) if line.strip()), len(lines))
+    first_line = lines[start].rstrip("\r\n") if start < len(lines) else ""
     if re.fullmatch(r"sep=([,;\t|])", first_line, re.IGNORECASE):
         delimiter = first_line[-1]
-        text = text[len(first_line):].lstrip("\r\n")
+        start += 1
     else:
         try:
-            delimiter = csv.Sniffer().sniff(text[:65536], delimiters=",;\t|").delimiter
+            delimiter = csv.Sniffer().sniff("".join(lines[start:])[:65536], delimiters=",;\t|").delimiter
         except csv.Error:
             counts = {sep: len(next(csv.reader([first_line], delimiter=sep))) for sep in (",", ";", "\t", "|")}
             delimiter = max(counts, key=counts.get)
-    reader = csv.reader(StringIO(text), delimiter=delimiter, strict=True, skipinitialspace=True)
-    rows = []
-    for row in reader:
-        if not row or not any(str(v).strip() for v in row):
+    offset = start
+    reader = csv.reader(islice(lines, offset, None), delimiter=delimiter, strict=True, skipinitialspace=True)
+    rows, locations, invalid = [], [], []
+    while True:
+        first = offset + reader.line_num
+        try:
+            row = next(reader)
+        except StopIteration:
+            break
+        except csv.Error as exc:
+            if not rows:
+                raise DatasetError("INVALID_CSV", "O cabeçalho não pôde ser lido. Confira as aspas e os separadores da primeira linha.") from exc
+            invalid.append(first + 1)
+            offset = first + 1
+            if "unexpected end" in str(exc):
+                # Uma aspa não fechada pode consumir o resto do arquivo. Procure
+                # a próxima linha completa sem repetir a leitura de todo o final.
+                while offset < len(lines):
+                    try:
+                        candidate = next(csv.reader([lines[offset]], delimiter=delimiter, strict=True))
+                        if candidate and len(candidate) <= len(rows[0]):
+                            break
+                    except (csv.Error, StopIteration):
+                        pass
+                    invalid.append(offset + 1)
+                    offset += 1
+            reader = csv.reader(islice(lines, offset, None), delimiter=delimiter, strict=True, skipinitialspace=True)
+            continue
+        if not rows and (not row or not any(str(v).strip() for v in row)):
             continue
         if len(rows) > MAX_ROWS + 10:
             raise DatasetError("TOO_MANY_ROWS", f"O limite é de {MAX_ROWS} linhas.", 413)
         rows.append(row)
+        locations.append(first + 1)
     if not rows:
         raise DatasetError("EMPTY_DATASET", "O arquivo não contém dados.")
     header_index = _header_row(rows)
     header = rows[header_index]
     names = _normalize_header(header, warnings)
     records = rows[header_index + 1:]
-    for index, row in enumerate(records, start=header_index + 2):
-        if len(row) != len(names):
-            raise DatasetError("INVALID_CSV", f"A linha {index} tem {len(row)} campos; o cabeçalho tem {len(names)}. Confira separadores e aspas nesta linha.")
+    record_locations = locations[header_index + 1:]
+    accepted, accepted_locations, padded, trimmed = [], [], [], []
+    for line, row in zip(record_locations, records):
+        if len(row) > len(names):
+            if any(value.strip() for value in row[len(names):]):
+                invalid.append(line)
+                continue
+            trimmed.append(line)
+            row = row[:len(names)]
+        if len(row) < len(names):
+            if row and any(value.strip() for value in row):
+                padded.append(line)
+            row = row + [None] * (len(names) - len(row))
+        accepted.append(row)
+        accepted_locations.append(line)
     if header_index:
         warnings.append(f"Cabeçalho reconhecido na linha {header_index + 1}; linhas de apresentação anteriores foram ignoradas.")
-    frame = pd.DataFrame(records, columns=names, dtype="string")
-    return frame, {"format": "CSV", "encoding": encoding, "delimiter": "tab" if delimiter == "\t" else delimiter, "header_row": header_index + 1}
+    frame = pd.DataFrame(accepted, columns=names, dtype="string")
+    report = report_for(frame)
+    known_locations = set(record_locations)
+    report["input_rows"] = len(records) + sum(line not in known_locations for line in invalid)
+    frame.attrs["source_rows"] = dict(enumerate(accepted_locations))
+    add_issue(frame, "INVALID_CSV_ROWS", "removed", "Linhas com estrutura inválida foram ignoradas sem interromper a leitura das demais.", rows=sorted(invalid))
+    add_issue(frame, "MISSING_FIELDS", "repaired", "Linhas com campos faltando foram completadas com valores ausentes.", rows=padded)
+    add_issue(frame, "EXTRA_EMPTY_FIELDS", "repaired", "Separadores vazios excedentes foram removidos do final das linhas.", rows=trimmed)
+    return frame, {"format": "CSV", "encoding": encoding, "delimiter": "tab" if delimiter == "\t" else delimiter, "header_row": locations[header_index]}
 
 
 def read_dataset(content: bytes, filename: str) -> pd.DataFrame:
@@ -123,14 +171,16 @@ def read_dataset(content: bytes, filename: str) -> pd.DataFrame:
                 raw = pd.DataFrame()
                 sheet = workbook.sheet_names[0]
                 for sheet in workbook.sheet_names:
-                    raw = pd.read_excel(workbook, sheet_name=sheet, header=None, nrows=MAX_ROWS + 12, dtype=object).dropna(how="all")
-                    if not raw.empty:
+                    raw = pd.read_excel(workbook, sheet_name=sheet, header=None, nrows=MAX_ROWS + 12, dtype=object)
+                    if not raw.dropna(how="all").empty:
                         break
-            if raw.empty:
+            if raw.dropna(how="all").empty:
                 raise DatasetError("EMPTY_DATASET", "A planilha não contém registros.")
-            header_index = _header_row(raw.head(10).values.tolist())
+            nonempty = raw.dropna(how="all")
+            header_index = int(nonempty.index[_header_row(nonempty.head(10).values.tolist())])
             df = raw.iloc[header_index + 1:].copy()
             df.columns = _normalize_header(raw.iloc[header_index].tolist(), warnings)
+            df.attrs["source_rows"] = {index: int(index) + 1 for index in df.index}
             info = {"format": actual[1:].upper(), "sheet": sheet, "header_row": header_index + 1}
             if header_index:
                 warnings.append(f"Cabeçalho reconhecido na linha {header_index + 1}; linhas de apresentação anteriores foram ignoradas.")
@@ -146,12 +196,14 @@ def read_dataset(content: bytes, filename: str) -> pd.DataFrame:
         raise DatasetError("EMPTY_DATASET", "A base não contém registros abaixo do cabeçalho.")
     if len(df) > MAX_ROWS or len(df.columns) > MAX_COLUMNS:
         raise DatasetError("DATASET_TOO_LARGE", f"Limites: {MAX_ROWS} linhas e {MAX_COLUMNS} colunas.", 413)
-    df = df.replace(r"(?i)^\s*(?:nan|null|none|n/a|na|\?)?\s*$", pd.NA, regex=True).reset_index(drop=True)
+    df.attrs.update(import_info=info, import_warnings=warnings)
+    df = clean_table(df)
     empty_columns = [c for c in df.columns if c.startswith("coluna_") and df[c].isna().all()]
     if empty_columns:
         df = df.drop(columns=empty_columns)
         warnings.append(f"{len(empty_columns)} colunas vazias sem nome foram ignoradas.")
-    df.attrs.update(import_info=info, import_warnings=warnings)
+    if df.empty:
+        raise DatasetError("NO_USABLE_ROWS", "A limpeza não encontrou registros utilizáveis. Confira o cabeçalho e pelo menos uma linha de dados válida.")
     return df
 
 

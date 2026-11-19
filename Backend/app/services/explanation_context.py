@@ -93,21 +93,21 @@ def enrich_explanation(explanation, context: dict):
         actions, caution = tutor_guidance(factor.feature)
         factor.tutor_actions, factor.bias_caution = actions, caution
         direction = "elevou" if factor.impact >= 0 else "reduziu"
-        factor.interpretation = (f"Neste caso, o modelo atribuiu a esta informação uma contribuição que {direction} a previsão em "
-                                 f"{_number(abs(factor.impact) * 100)} pontos percentuais em relação à referência SHAP, "
-                                 "considerando também as outras informações do registro.")
+        factor.interpretation = (f"Na conta deste aluno, esta informação {direction} a estimativa em "
+                                 f"{_number(abs(factor.impact) * 100)} pontos percentuais a partir da estimativa de comparação, "
+                                 "junto com as outras informações do registro. Isso mostra o efeito na conta, não a causa real da situação do aluno.")
         source = "conjunto de treino" if context.get("source") == "training" else "amostra de referência do modelo antigo"
         text = f"Referência: {source}, com {context.get('rows', 0)} registros. "
         group = None
         if factor.value is None:
-            text += "O valor está ausente; o pipeline usou uma imputação. Confira o dado antes de interpretar o efeito."
+            text += "Esta informação não foi preenchida. O sistema usou um valor de preenchimento aprendido no histórico. Confira a planilha antes de interpretar o efeito."
         elif item.get("kind") == "numeric":
             value = parse_numeric(pd.Series([factor.value])).iloc[0]
             if pd.notna(value):
                 position = "abaixo" if value < item["median"] else "acima" if value > item["median"] else "no mesmo valor"
-                text += f"Valor informado: {_number(value)}; mediana histórica: {_number(item['median'])}. O valor está {position} da mediana. "
+                text += f"Valor informado: {_number(value)}; mediana histórica: {_number(item['median'])}. O valor está {position} desse ponto central, chamado mediana. "
                 if value < item["min"] or value > item["max"]:
-                    text += "Está fora da faixa observada no treino; esta comparação é incerta. "
+                    text += "Esse valor não apareceu na faixa usada para o aprendizado. A comparação é menos segura; confira se o dado foi registrado corretamente. "
                 group = next((b for b in item["bins"] if (b["lower"] is None or value > b["lower"]) and (b["upper"] is None or value <= b["upper"])), None)
                 if group:
                     limits = []
@@ -121,13 +121,13 @@ def enrich_explanation(explanation, context: dict):
         else:
             group = item.get("categories", {}).get(str(factor.value))
             if group is None:
-                text += "Categoria sem referência histórica suficiente nesta explicação. "
+                text += "Não há exemplos suficientes desta situação no histórico usado na explicação. "
         if group and group["rate"] is not None and group["others"]["rate"] is not None:
             text += (f"Nos registros históricos desta faixa/categoria ({group['count']} exemplos), o resultado de risco ocorreu em "
                      f"{_number(group['rate'] * 100)}%, contra {_number(group['others']['rate'] * 100)}% nos demais "
-                     f"({group['others']['count']} exemplos). Isso descreve associação, sem isolar o efeito desta variável.")
+                     f"({group['others']['count']} exemplos). Isso mostra o que apareceu junto no histórico. Não quer dizer que essa informação, sozinha, causou o resultado.")
         elif group:
-            text += "Não exibimos uma taxa de resultado: faltam rótulos históricos nesta referência ou há menos de 10 registros em um dos grupos."
+            text += "Não exibimos uma taxa de resultado: falta a situação final nos exemplos usados como comparação, ou um dos grupos tem menos de 10 registros."
         factor.historical_context = text
     explanation.context_version = CONTEXT_VERSION
     return explanation

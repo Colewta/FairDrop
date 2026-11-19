@@ -11,6 +11,7 @@ from app.services.prediction import RiskPredictor
 from app.services.repository import Repository, get_repository, new_id, now
 import pandas as pd
 from app.services.numeric import parse_numeric
+from app.services.mitigation_methods import METHODS
 
 router = APIRouter(tags=["platform"])
 
@@ -144,14 +145,40 @@ def get_student(identifier: str, repository: Repository = Depends(get_repository
     return RiskPredictor(repository).explain_student(identifier)
 
 
+@router.get("/models/{identifier}/mitigation-options")
+def mitigation_options(identifier: str, constraint: str = "demographic_parity", repository: Repository = Depends(get_repository)):
+    from app.services.mitigation_options import experiment_options
+    if constraint not in {"demographic_parity", "equalized_odds"}:
+        raise DatasetError("INVALID_CONSTRAINT", "Escolha paridade de alertas ou equilíbrio dos erros.")
+    return experiment_options(repository, ModelCard.model_validate(repository.get("models", identifier)), constraint)
+
+
 @router.post("/models/{identifier}/mitigate", response_model=TrainingRun, status_code=202)
 def mitigate_model(identifier: str, request: MitigationRequest, tasks: BackgroundTasks, repository: Repository = Depends(get_repository)):
     card = ModelCard.model_validate(repository.get("models", identifier))
-    if request.feature not in card.sensitive_features:
-        raise DatasetError("INVALID_MITIGATION_GROUP", "Escolha um atributo confirmado na avaliação de equidade deste modelo.")
+    from app.services.mitigation_options import experiment_options
+    if request.method == "none":
+        raise DatasetError("INVALID_MITIGATION", "Escolha uma técnica de mitigação.")
+    options = experiment_options(repository, card, request.constraint)
+    group = next((g for g in options["groups"] if g["column"] == request.feature), None)
+    if group is None:
+        raise DatasetError("INVALID_MITIGATION_GROUP", "Escolha um grupo disponível na base, sem identificadores ou informações posteriores ao resultado.")
+    eligibility = group["eligibility"][request.method]
+    if not eligibility["available"]:
+        raise DatasetError("MITIGATION_UNAVAILABLE", eligibility["reason"])
     repository.get("datasets", card.dataset_id)
-    config = card.config.model_copy(update={"mitigation": "reweighing", "mitigation_features": [request.feature],
-        "strategy": request.strategy, "name": f"Mitigação · {card.name}"[:160]})
+    algorithms = ["logistic"] if request.method in {"regularization", "adversarial", "constraints"} else card.config.algorithms
+    protected = set(card.sensitive_features) | {request.feature} | {g["column"] for g in options["groups"] if g["suggested"]}
+    prediction_features = [f for f in card.features if f not in protected]
+    if not prediction_features:
+        raise DatasetError("NO_FEATURES", "Não restaram informações de previsão após separar os grupos. Revise os atributos da base antes do experimento.")
+    config = card.config.model_copy(update={"mitigation": request.method, "mitigation_features": [request.feature],
+        "sensitive_features": list(dict.fromkeys([*card.sensitive_features, request.feature])),
+        "prediction_features": prediction_features, "allow_sensitive_features": False,
+        "balance_classes": False, "algorithms": algorithms, "mitigation_strength": request.strength,
+        "fairness_constraint": request.constraint, "prefer_mitigated": request.apply,
+        "source_model_id": card.id,
+        "strategy": request.strategy, "name": f"{METHODS[request.method][0]} · {card.name}"[:160]})
     return start_training(config, tasks, repository)
 
 

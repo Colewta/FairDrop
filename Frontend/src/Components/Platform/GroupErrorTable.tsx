@@ -1,0 +1,7 @@
+import type { FairnessReport } from '../../types/platform';
+import { percent } from '../../services/format';
+
+export function GroupErrorTable({ report }: { report: FairnessReport }) {
+  return <div className="group-error-comparisons">{report.comparisons.map(comparison => <div key={`${comparison.feature}:${comparison.group}`}><h4>{comparison.feature}: como os erros se distribuem</h4><div className="table-scroll"><table className="data-table"><thead><tr><th>Grupo</th><th>Registros</th><th>Falsos alertas (FPR)</th><th>Casos de risco não detectados (FNR)</th></tr></thead><tbody>{[{ name: comparison.group, count: comparison.group_count, rates: comparison.group_rates }, { name: comparison.reference, count: comparison.reference_count, rates: comparison.reference_rates }].map(group => <tr key={group.name}><th>{group.name}</th><td>{group.count}</td><td>{percent(group.rates?.false_positive_rate)}<small> entre {group.rates?.actual_negative_count ?? '—'} sem o resultado</small></td><td>{percent(group.rates?.false_negative_rate)}<small> entre {group.rates?.actual_positive_count ?? '—'} com o resultado</small></td></tr>)}</tbody></table></div></div>)}{report.comparisons.length > 0 && <p>As duas colunas mostram erros diferentes. FPR conta os avisos para quem não teve a situação acompanhada. FNR conta quem teve a situação e ficou sem aviso. Um grupo pode receber contatos desnecessários enquanto outro passa sem identificação. Veja também quantos registros entraram na conta: com poucos exemplos, as porcentagens podem mudar bastante.</p>}</div>;
+}
+

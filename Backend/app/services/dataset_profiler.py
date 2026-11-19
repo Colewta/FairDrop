@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 from app.core.config import IDENTIFIER_RATIO, MIN_IDENTIFIER_ROWS
-from app.schemas.dataset import Candidate, ColumnProfile, ColumnRole as Role, DatasetError, DatasetProfile
+from app.schemas.dataset import Candidate, ColumnProfile, ColumnRole as Role, DatasetError, DatasetProfile, HealthIssue
 from app.services.data_validator import DataValidator
 from app.services.leakage_detector import LeakageDetector
 from app.services.semantic_analyzer import LocalSemanticAnalyzer, SemanticAnalyzer, normalize_name
@@ -25,7 +25,7 @@ def infer_type(series: pd.Series) -> str:
     if labels <= BOOLEAN_LABELS or pd.api.types.is_bool_dtype(series):
         return "boolean"
     numeric = parse_numeric(values)
-    if numeric.notna().all():
+    if numeric.notna().mean() >= 0.9:
         return "numeric"
     strings = values.astype(str)
     if strings.str.match(r"^(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{4})").mean() >= 0.9:
@@ -126,6 +126,17 @@ class DatasetProfiler:
                     profile.role_suggestion = Role.TARGET
                     if Role.TARGET not in profile.tags:
                         profile.tags.append(Role.TARGET)
+        health = DataValidator().check(df, selected, leakage)
+        for profile in profiles:
+            if profile.dtype not in {"numeric", "date"}:
+                continue
+            values = parse_numeric(df[profile.name]) if profile.dtype == "numeric" else pd.to_datetime(df[profile.name], errors="coerce", format="mixed", utc=True)
+            invalid = df[profile.name].notna() & values.isna()
+            if invalid.any():
+                source = df.attrs.get("source_rows", {})
+                rows = [str(source.get(index, position + 2)) for position, index in enumerate(df.index[invalid][:20])]
+                health.issues.append(HealthIssue(severity="warning", code="INVALID_VALUES", column=profile.name,
+                    message=f"{int(invalid.sum())} valores incompatíveis nas linhas {', '.join(rows)}. Se esta coluna for usada na previsão, esses campos serão tratados como ausentes."))
         return DatasetProfile(
             rows=len(df), columns=len(df.columns), duplicates=int(df.duplicated().sum()),
             missing_cells_percentage=round(float(df.isna().sum().sum()) / df.size * 100, 3),
@@ -136,6 +147,7 @@ class DatasetProfiler:
             leakage_alerts=leakage, prediction_features=[c for c in df.columns if c not in excluded],
             fairness_features=[c for c in sensitive if c != selected],
             excluded_features=[c for c in df.columns if c in excluded],
-            health=DataValidator().check(df, selected, leakage),
+            health=health,
             import_info=df.attrs.get("import_info", {}), import_warnings=df.attrs.get("import_warnings", []),
+            cleaning_report=df.attrs.get("cleaning_report"),
         )

@@ -11,7 +11,7 @@ export function DemoLauncher({ compact = false, modelId }: { compact?: boolean; 
   async function run() { setBusy(true); setError(null);
     try { const response = await api.post<PredictionBatch>(`/demo/predict${modelId ? `?model_id=${modelId}` : ''}`); navigate(`/predictions/${response.data.id}`); }
     catch (err) { setError(getApiErrorMessage(err)); } finally { setBusy(false); } }
-  return <div className={compact ? 'demo-compact' : 'demo-launcher'}>{!compact && <><span className="section-kicker">Exemplo de uso</span><h2>Conhecer a aplicação</h2><p>Uma turma fictícia de 30 alunos e dois modelos treinados estão disponíveis para consulta. Veja as previsões e abra os casos para entender a análise.</p></>}<button type="button" className="primary-button" onClick={() => void run()} disabled={busy}>{busy ? 'Abrindo avaliação…' : 'Abrir avaliação de exemplo'}</button><ErrorNotice message={error} /><small>Os dados deste exemplo são fictícios.</small></div>;
+  return <div className={compact ? 'demo-compact' : 'demo-launcher'}>{!compact && <><span className="section-kicker">Exemplo de uso</span><h2>Conhecer a aplicação</h2><p>Se é sua primeira vez aqui, comece pelo exemplo. Você vai ver uma turma de 30 alunos fictícios, com previsões já preparadas. Abra um aluno para entender a porcentagem e os fatores que pesaram na conta.</p></>}<button type="button" className="primary-button" onClick={() => void run()} disabled={busy}>{busy ? 'Abrindo avaliação…' : 'Abrir avaliação de exemplo'}</button><ErrorNotice message={error} /><small>Os dados deste exemplo são fictícios.</small></div>;
 }
 
 export function DownloadExample({ kind, children }: { kind: 'historical' | 'current'; children: React.ReactNode }) {

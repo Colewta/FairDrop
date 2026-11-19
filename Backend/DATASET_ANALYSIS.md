@@ -16,9 +16,14 @@ Reconhece a diretiva `sep=` usada pelo Excel. IDs textuais preservam zeros inici
 Cabeçalhos vazios/repetidos recebem nomes únicos e avisos. Uma linha de códigos
 X1..Xn/Y seguida por nomes reais (caso da base de crédito do projeto) é reconhecida.
 Primeira aba Excel não vazia é usada. Linhas físicas vazias e colunas anônimas
-totalmente vazias são ignoradas. Linhas com quantidade inconsistente de campos
-produzem erro com o número da linha; não são descartadas silenciosamente.
-Correções aparecem em `import_info` e `import_warnings` e na primeira tela do assistente.
+totalmente vazias são ignoradas. Campos faltando no fim de uma linha são marcados
+como ausentes e campos extras vazios são removidos. Linhas irrecuperáveis são
+ignoradas, enquanto as demais continuam sendo lidas. Duplicatas idênticas são
+reduzidas à primeira ocorrência e cabeçalhos repetidos nos registros são removidos.
+Correções de formato aparecem em `import_info` e `import_warnings`; o campo
+`cleaning_report` registra as contagens e até 20 linhas de origem por ocorrência,
+sem incluir valores pessoais. A primeira tela do assistente permite consultar os
+ajustes. O mesmo relatório acompanha o modelo e os lotes de previsão.
 
 Números com vírgula decimal e com separadores de milhar mistos são interpretados
 sem extrair dígitos de códigos. Valores ambíguos com separadores exigem conferir a
@@ -37,10 +42,21 @@ e-mail, UUID ou código. Unicidade isolada não exclui medidas contínuas.
 Targets sugeridos têm 2–20 classes; a API de confirmação aceita até 30 e suporta
 definição de faixa para valores numéricos contínuos. A escolha humana é registrada.
 
-Leakage HIGH: nomes pós-evento ou relação categórica determinística com o target
-em pelo menos 30 pares válidos, 2–20 categorias e 5 exemplos por categoria.
+Leakage HIGH: nomes pós-evento, metadados temporais do próprio resultado
+(como data, ano ou período de alteração da situação), ou relação categórica
+determinística com o target em pelo menos 30 pares válidos, 2–20 categorias
+e 5 exemplos por categoria. Também detecta quando a presença/ausência de um campo
+separa perfeitamente uma classe das demais, com pelo menos 30 registros e
+5 exemplos em cada grupo de preenchimento. Datas de ingresso não são bloqueadas
+apenas por serem datas. As exclusões e seus motivos ficam nos avisos do modelo.
 Leakage MEDIUM: correlação numérica absoluta >=.98 em pelo menos 30 pares.
 Ausência de alerta não prova ausência de vazamento; revise disponibilidade temporal.
+Uma avaliação com 100% de acurácia mantém sua métrica calculada e recebe um aviso
+de revisão; confirme a disponibilidade dos atributos antes do evento e valide
+em outro período. Modelos antigos precisam ser treinados novamente para usar
+as novas exclusões: alterar o detector não modifica um pipeline já salvo.
+Novas avaliações são bloqueadas se o modelo salvo usa nomes pós-evento sem revisão
+registrada em `reviewed_leakage`. O modelo e as avaliações anteriores são preservados.
 
 Qualidade mostra ausências, duplicatas, constantes, infinitos, classes pequenas,
 desbalanceamento abaixo de 10% e leakage. Não há nota agregada opaca.

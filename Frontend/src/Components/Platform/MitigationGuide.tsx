@@ -12,25 +12,25 @@ const techniques = [
     availability: 'A revisão do tutor pode ser registrada na tela do aluno. A correção é feita na fonte e exige importar a base novamente.' },
   { key: 'representation', title: 'Incluir melhor os grupos pouco representados', technical: 'Representatividade da amostra',
     when: 'Quando há poucos exemplos de um grupo, períodos ausentes ou situações de risco quase não representadas.',
-    meaning: 'Com poucos exemplos de um grupo, o modelo pode deixar de reconhecer situações importantes para esses alunos.',
+    meaning: 'Se um grupo quase não aparece no histórico, o sistema tem poucos exemplos para aprender sobre ele. Por isso, pode errar mais com esses alunos.',
     example: 'Exemplo fictício: a base tem muitas turmas diurnas e quase nenhuma noturna. O modelo pode funcionar pior para quem estuda à noite.',
     tutor: 'Avise quais turmas ou situações estão pouco presentes e confira se os canais de registro atendem a todos.',
     team: 'Busque registros reais e consistentes dos grupos e períodos ausentes. Separe novos dados para avaliar o modelo, evitando duplicar o mesmo aluno entre treino e avaliação.',
     verify: 'Compare o número de registros de cada grupo, a disponibilidade das métricas e os erros nos novos períodos.',
     limit: 'Copiar linhas não cria novas evidências. Igualar quantidades por si só não corrige resultados históricos errados nem garante equidade.',
-    availability: 'A composição da base é revista pela instituição. Depois, importe a base revisada e faça um novo treino.' },
+    availability: 'A escola precisa buscar os registros que estão faltando. Quando a planilha estiver revisada, envie-a de novo e inicie outra análise.' },
   { key: 'reweighing', title: 'Reponderar os exemplos de treinamento', technical: 'Reponderação · Reweighing',
-    when: 'Quando há associação entre o grupo e o resultado no histórico e é preciso testar se reduzir essa associação no aprendizado diminui diferenças nas previsões.',
+    when: 'Quando as situações registradas aparecem em proporções diferentes entre os grupos e você quer testar um ajuste no aprendizado. Antes, confira se essas diferenças refletem a realidade ou erros na planilha.',
     meaning: 'Cada registro continua sendo o mesmo. O que muda é quanto ele conta durante o aprendizado: algumas combinações de grupo e resultado recebem mais peso e outras, menos.',
-    example: 'Exemplo fictício: uma combinação de grupo e resultado aparece menos do que seria esperado se fossem independentes. Esses registros podem receber mais peso no treino. O peso depende da combinação, não apenas do tamanho do grupo.',
-    tutor: 'Escolha o atributo que precisa de investigação, leia os erros dos dois grupos e use o experimento abaixo para pedir a comparação.',
+    example: 'Exemplo fictício: o histórico tem poucos casos de trancamento do noturno em relação aos casos dos outros grupos. O sistema pode dar mais importância a essa combinação enquanto aprende. A conta considera o grupo junto com o resultado, e não apenas o tamanho da turma.',
+    tutor: 'Escolha uma coluna para comparar os grupos, confira os erros e use “Preparar um experimento” para testar a reponderação.',
     team: 'O FairDrop calcula os pesos no treino e compara o modelo original com a versão reponderada. O resultado final usa os mesmos registros de teste e o mesmo limite de alerta.',
     verify: 'Leia antes e depois: diminuiu a diferença de detecção? Aumentaram os falsos alertas? Algum grupo ficou com mais casos sem apoio? Confira também o desempenho geral.',
     limit: 'Pode melhorar uma medida e piorar outra. Não conserta registros errados nem garante a eliminação do viés. A comparação pode manter o modelo original.',
-    availability: 'Use “Comparar com reponderação” abaixo. O experimento exige dados suficientes em cada grupo. A técnica não está disponível para KNN.' },
+    availability: 'Na seção “Preparar um experimento”, escolha os grupos e a reponderação. O sistema avisa se faltam exemplos. KNN, um dos métodos de previsão, não aceita esse ajuste.' },
   { key: 'proxy', title: 'Revisar informações que podem reproduzir desigualdades', technical: 'Revisão de variáveis e de proxies',
     when: 'Quando uma informação parece representar indiretamente condições sociais ou oportunidades desiguais, em vez de uma necessidade educacional bem compreendida.',
-    meaning: 'Uma proxy é uma pista indireta. Mesmo sem informar renda, outras colunas podem carregar parte dessa informação. Retirar apenas o nome de um atributo sensível não elimina o problema.',
+    meaning: 'Uma informação pode dar pistas sobre outra. O bairro, por exemplo, pode estar ligado à renda. Essas pistas indiretas são chamadas proxies. Por isso, tirar a coluna de renda não garante que o sistema deixou de usar informações ligadas a ela.',
     example: 'Exemplo fictício: poucos acessos à plataforma podem estar ligados à falta de internet. Interpretá-los automaticamente como desinteresse pode prejudicar um grupo.',
     tutor: 'Pergunte como a informação é produzida e quais barreiras podem explicá-la. Confira o contexto com o aluno, sem presumir sua situação a partir do grupo.',
     team: 'Revise a utilidade e a disponibilidade da informação antes do resultado. Teste um modelo com e outro sem a variável, mantendo condições de comparação equivalentes.',
@@ -57,7 +57,7 @@ const techniques = [
     availability: 'Existe uma opção de calibração na configuração técnica de treino. É preciso treinar e avaliar um novo modelo.' },
   { key: 'support', title: 'Tornar o apoio acessível e acompanhar os efeitos', technical: 'Revisão humana e monitoramento',
     when: 'Em toda utilização, especialmente quando um grupo recebe menos apoio ou mais abordagens desnecessárias.',
-    meaning: 'Mitigar também significa reduzir possíveis danos no uso da análise: conferir cada caso, ouvir o aluno e remover barreiras no atendimento.',
+    meaning: 'O cuidado também está no uso dos resultados: conferir a situação, ouvir o aluno e ver se ele consegue acessar o apoio. Um ajuste no sistema não resolve, por exemplo, um horário de tutoria que o aluno não pode frequentar.',
     example: 'Exemplo fictício: a tutoria só atende em um horário incompatível com parte dos alunos. Oferecer outros horários pode ampliar o acesso sem alterar a identidade de ninguém.',
     tutor: 'Combine um encaminhamento com o aluno, registre a revisão e verifique depois se ele conseguiu acessar o apoio. Não condicione todo atendimento ao alerta.',
     team: 'Acompanhe acesso ao apoio e, quando os resultados reais estiverem disponíveis, compare falsos alertas e casos perdidos por grupo no novo período.',
@@ -72,12 +72,12 @@ export default function MitigationGuide() {
   const technique = techniques.find(item => item.key === selected)!;
   return <div className="mitigation-guide">
     <h4>Opções de mitigação</h4>
-    <p>Confira os registros e os erros por grupo antes de escolher uma ação. As opções abaixo atendem a problemas diferentes e podem precisar ser combinadas.</p>
+    <p>Nem toda diferença se resolve mudando o método de previsão. Um erro na chamada, por exemplo, precisa ser corrigido na escola. Escolha abaixo o problema que quer entender e veja quem pode agir e como conferir o resultado.</p>
     <label className="field-group" htmlFor={id}>Ação a consultar<select id={id} value={selected} onChange={e => setSelected(e.target.value)}>{techniques.map(item => <option key={item.key} value={item.key}>{item.title}</option>)}</select></label>
     <div className="metric-lesson" aria-live="polite" aria-atomic="true"><h4>{technique.title}</h4><span className="section-kicker">{technique.technical}</span><p>{technique.meaning}</p>
       <p><strong>Quando usar:</strong> {technique.when}</p>
       <div className="metric-reading"><p>{technique.example}</p></div>
-      <div className="action-responsibilities"><div><h4>Na revisão do aluno</h4><p>{technique.tutor}</p></div><div><h4>Com a instituição e a equipe técnica</h4><p>{technique.team}</p></div></div>
+      <div className="action-responsibilities"><div><h4>O que o tutor pode fazer</h4><p>{technique.tutor}</p></div><div><h4>O que precisa da escola ou da equipe técnica</h4><p>{technique.team}</p></div></div>
       <h4>Como avaliar o resultado</h4><p>{technique.verify}</p>
       <p><strong>Limites:</strong> {technique.limit}</p>
       <p className="notice"><strong>Na aplicação:</strong> {technique.availability}</p>

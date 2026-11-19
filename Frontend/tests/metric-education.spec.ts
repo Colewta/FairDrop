@@ -100,14 +100,15 @@ test('a tutor explores metrics and mitigation in simple mode on desktop and mobi
   }
   for (const key of ['statistical_parity_difference', 'equal_opportunity_difference', 'average_odds_difference', 'fairness_score']) {
     await page.getByLabel('Medida de equidade').selectOption(key);
-    await expect(fairness.getByText('Na revisão dos alunos')).toBeVisible();
+    await expect(fairness.getByText('O que conferir com os alunos')).toBeVisible();
   }
   await page.getByLabel('Medida de equidade').selectOption('disparate_impact');
   await page.getByRole('link', { name: 'Consultar opções de mitigação' }).click();
+  await page.getByText('Outras ações para revisar os vieses', { exact: true }).click();
   await page.getByLabel('Ação a consultar').selectOption('reweighing');
-  await expect(page.getByRole('heading', { name: 'Na revisão do aluno', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'O que o tutor pode fazer', exact: true })).toBeVisible();
   await expect(page.getByText(/Cada registro continua sendo o mesmo/)).toBeVisible();
-  await page.getByLabel('Critério de escolha').selectOption('best_predictive');
+  await page.getByLabel('Prioridade na comparação').selectOption('best_predictive');
   await expect(page.getByText(/não participam da pontuação de escolha/)).toBeVisible();
   await page.screenshot({ path: 'test-results/metric-education-desktop.png', fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });

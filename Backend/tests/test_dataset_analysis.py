@@ -90,6 +90,32 @@ def test_leakage_copy_correlation_and_unique_categories():
     assert alerts == {"copy": "HIGH", "numeric": "MEDIUM"}
 
 
+@pytest.mark.parametrize("column", [
+    "data_alteracao_situacao", "ano_alteracao_situacao", "periodo_alteracao_situacao",
+    "dataAlteracaoSituacao", "Data de alteração da situação", "data_situacao",
+    "status_change_date", "data_trancamento", "ano_atualizacao_resultado",
+])
+def test_outcome_metadata_excluded_even_without_statistical_association(column):
+    target = "resultado" if column.endswith("resultado") else "situacao"
+    frame = pd.DataFrame({target: ["Ativo", "Evadido"] * 30,
+                          column: list(range(60)), "ano_ingresso": list(range(60)),
+                          "data_inicio_aulas": pd.date_range("2020-01-01", periods=60).astype(str)})
+    profile = DatasetProfiler().profile(frame, target)
+    assert any(alert.column == column and alert.risk == "HIGH" for alert in profile.leakage_alerts)
+    assert column not in profile.prediction_features
+    assert {"ano_ingresso", "data_inicio_aulas"} <= set(profile.prediction_features)
+
+
+def test_missingness_can_reveal_one_class_of_a_multiclass_outcome():
+    frame = pd.DataFrame({"situacao": ["TRANCADO"] * 20 + ["ATIVO", "FORMADO"] * 20,
+                          "observacao": [None] * 20 + [f"texto{i}" for i in range(40)]})
+    alerts = LeakageDetector().detect(frame, "situacao", [])
+    assert len(alerts) == 1 and alerts[0].column == "observacao" and alerts[0].risk == "HIGH"
+    assert "preenchido ou vazio" in alerts[0].reason
+    frame.loc[20, "observacao"] = None
+    assert LeakageDetector().detect(frame, "situacao", []) == []
+
+
 def test_health_missing_constant_duplicates_imbalance():
     df = pd.DataFrame({"status": ["Ativo"] * 98 + ["Evadido"] * 2,
                        "vazio": [None] * 100, "infinito": [np.inf] * 100})

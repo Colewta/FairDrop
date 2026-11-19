@@ -9,9 +9,10 @@ from app.schemas.platform import Explanation, PredictionBatch, StudentDetail, St
 from app.services.explainability import SHAPExplainer
 from app.services.model_registry import ModelRegistry
 from app.services.repository import Repository, new_id, now
-from app.services.numeric import parse_numeric
 from app.services.semantic_analyzer import normalize_name
 from app.services.explanation_context import CONTEXT_VERSION, build_context, enrich_explanation, scenario_allowed
+from app.services.data_cleaning import add_issue, clean_feature_values, clean_identifiers, clean_table, cleaning_messages, finish_report, report_for
+from app.services.leakage_detector import LeakageDetector
 
 
 def risk_level(probability: float, low: float, medium: float) -> str:
@@ -24,26 +25,34 @@ class RiskPredictor:
 
     def predict(self, model_id: str, frame: pd.DataFrame, name: str) -> PredictionBatch:
         card, artifact = ModelRegistry(self.repository).load(model_id)
+        # Pipelines antigos não são corrigidos ao atualizar o detector. Evitar
+        # novas avaliações com metadados pós-evento que nunca foram revisados.
+        schema = pd.DataFrame(columns=list(dict.fromkeys([*card.features, card.target])))
+        unsafe = [alert.column for alert in LeakageDetector().detect(schema, card.target, [])
+                  if alert.risk == "HIGH" and alert.column not in card.config.reviewed_leakage]
+        if unsafe:
+            raise DatasetError("UNSAFE_SAVED_MODEL", "Este modelo foi treinado com informações que podem revelar o resultado: "
+                               + ", ".join(unsafe) + ". Treine um novo modelo com a proteção atual antes de avaliar alunos.")
         missing = set(card.features) - set(frame.columns)
         if missing:
             raise DatasetError("MISSING_FEATURES", "A base atual não contém as colunas utilizadas no treinamento: " + ", ".join(sorted(missing)))
-        for column, kind in card.feature_schema.items():
-            if kind not in {"numeric", "date"}:
-                continue
-            parsed = parse_numeric(frame[column]) if kind == "numeric" else pd.to_datetime(frame[column], errors="coerce", format="mixed", utc=True)
-            if (frame[column].notna() & parsed.isna()).any():
-                raise DatasetError("INCOMPATIBLE_FEATURE", f'A coluna "{column}" contém valores incompatíveis com o tipo usado no treinamento.')
+        frame = clean_feature_values(clean_table(frame), card.feature_schema)
+        frame = clean_identifiers(frame, card.identifier_column)
+        if frame.empty:
+            raise DatasetError("NO_USABLE_ROWS", "Não restaram registros utilizáveis para avaliar.")
         batch_id = new_id()
         timestamp = now()
-        warnings = []
         if card.identifier_column and card.identifier_column in frame.columns:
-            ids = frame[card.identifier_column]
-            if ids.isna().any() or ids.astype(str).duplicated().any():
-                raise DatasetError("INVALID_IDENTIFIERS", "Os identificadores dos alunos precisam estar preenchidos e ser únicos no lote.")
-            ids = ids.astype(str).tolist()
+            missing_ids = frame[card.identifier_column].isna()
+            add_issue(frame, "GENERATED_IDENTIFIERS", "generated", "Registros sem matrícula receberam identificação exclusiva desta avaliação; não serão ligados a outros períodos.", missing_ids, card.identifier_column)
+            ids = [str(value) if pd.notna(value) else f"{batch_id}:{i + 1}" for i, value in enumerate(frame[card.identifier_column])]
         else:
             ids = [f"{batch_id}:{i + 1}" for i in range(len(frame))]
-            warnings.append("Identificador ausente: foram criados IDs exclusivos deste lote; não é possível ligar estes registros a outros períodos.")
+            add_issue(frame, "GENERATED_IDENTIFIERS", "generated", "Identificador ausente: foram criados IDs exclusivos deste lote; não é possível ligar estes registros a outros períodos.", frame.index.isin(frame.index))
+        finish_report(frame)
+        warnings = cleaning_messages(frame)
+        cleaning_report = report_for(frame)
+        frame.attrs = {}
         if card.target in frame.columns:
             warnings.append("A coluna de resultado foi ignorada na previsão.")
         probabilities = np.concatenate([artifact["pipeline"].predict_proba(frame.iloc[start:start + PREDICTION_CHUNK_SIZE][card.features])[:, 1]
@@ -76,6 +85,7 @@ class RiskPredictor:
                            "risk_level": levels[index], "payload": item.model_dump(mode="json"), "features": features, "explanation": None}
         batch = PredictionBatch(id=batch_id, model_id=card.id, name=name, created_at=timestamp, total=len(frame),
             summary=summary, average_risk=float(probabilities.mean()), warnings=warnings, group_filters=group_filters,
+            cleaning_report=cleaning_report,
             audit={"model_id": card.id, "version": card.version, "algorithm": card.algorithm, "created_at": timestamp,
                    "features": card.features, "threshold": card.threshold, "risk_thresholds": card.risk_thresholds,
                    "positive_class": card.positive_class,

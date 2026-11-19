@@ -29,11 +29,12 @@ def train_and_save(repository: Repository, config: TrainingConfig) -> ModelCard:
             metrics=output.metrics, fairness=output.fairness, comparison=output.comparison,
             failed_algorithms=output.failed, feature_importance=output.feature_importance,
             explanation=explanation, split=output.split, warnings=output.warnings, mitigation=output.mitigation,
+            cleaning_report=output.cleaning_report,
             limitations=["Probabilidade estimada a partir de dados históricos; não é certeza nem diagnóstico.",
-                         "SHAP explica o comportamento do modelo, não causalidade.",
-                         "Fairness depende dos grupos, tamanhos de amostra e contexto; limiares não certificam justiça.",
-                         "Divisão aleatória por aluno; valide também em um período futuro antes de uso operacional.",
-                         "Uma única instituição por instalação. A decisão requer revisão humana."])
+                         "A explicação SHAP mostra o que pesou na conta. Ela não mostra, por si só, por que o aluno teve aquela situação.",
+                         "As comparações dependem dos grupos escolhidos e da quantidade de exemplos. Estar dentro das faixas de atenção não prova que o tratamento foi justo.",
+                         "O histórico foi separado por sorteio entre alunos. Antes de usar a análise no atendimento, confira os resultados com dados de outro período.",
+                         "Esta instalação reúne os dados de uma instituição. Confira cada caso antes de decidir um encaminhamento para o aluno."])
         ModelRegistry(repository).save(card, output.model, output.background, output.context)
     logger.info("Treinamento concluído: model_id=%s algorithm=%s", card.id, card.algorithm)
     return card

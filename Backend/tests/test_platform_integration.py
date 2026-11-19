@@ -67,6 +67,29 @@ def test_threshold_boundaries():
     assert risk_level(0.7, 0.3, 0.7) == "high"
 
 
+def test_saved_model_with_unreviewed_post_event_features_cannot_evaluate_students(students, isolated_storage):
+    students["data_alteracao_situacao"] = np.where(students.situacao == "Evadido", "2026-06-01", "2025-01-01")
+    with TestClient(app) as client:
+        dataset = client.post("/datasets", files={"file": ("historico.csv", students.to_csv(index=False).encode())}).json()
+        config = {"dataset_id": dataset["id"], "target": "situacao", "positive_class": "Evadido",
+                  "identifier_column": "matricula", "algorithms": ["logistic"],
+                  "prediction_features": ["frequencia", "data_alteracao_situacao"],
+                  "reviewed_leakage": ["data_alteracao_situacao"]}
+        response = client.post("/train-automl", json=config)
+        assert response.status_code == 200, response.text
+        card = response.json()
+        file = ("atuais.csv", students.head(12).to_csv(index=False).encode())
+        assert client.post("/predict", data={"model_id": card["id"]}, files={"file": file}).status_code == 201
+        # Simula um modelo da versão anterior, sem revisão dessas colunas.
+        card["config"]["reviewed_leakage"] = []
+        isolated_storage.put("models", card)
+        response = client.post("/predict", data={"model_id": card["id"]}, files={"file": file})
+        assert response.status_code == 400
+        assert response.json()["detail"]["error"] == "UNSAFE_SAVED_MODEL"
+        assert "Treine um novo modelo" in response.json()["detail"]["message"]
+        assert len(isolated_storage.list("prediction_batches")) == 1
+
+
 def test_institution_isolation(isolated_storage):
     isolated_storage.put("datasets", {"id": "a" * 32, "created_at": "today"})
     other = Repository(isolated_storage.root, "other")

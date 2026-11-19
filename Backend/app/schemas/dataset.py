@@ -59,6 +59,22 @@ class DataHealth(BaseModel):
     # Sem nota agregada: não mascarar um problema crítico com médias.
 
 
+class CleaningIssue(BaseModel):
+    code: str
+    action: str
+    message: str
+    column: str | None = None
+    count: int
+    rows: list[int] = Field(default_factory=list)
+
+
+class CleaningReport(BaseModel):
+    input_rows: int
+    output_rows: int
+    removed_rows: int
+    issues: list[CleaningIssue] = Field(default_factory=list)
+
+
 class DatasetProfile(BaseModel):
     rows: int
     columns: int
@@ -78,6 +94,7 @@ class DatasetProfile(BaseModel):
     health: DataHealth
     import_info: dict[str, str | int] = Field(default_factory=dict)
     import_warnings: list[str] = Field(default_factory=list)
+    cleaning_report: CleaningReport | None = None
 
 
 class DatasetError(ValueError):

@@ -5,6 +5,9 @@ from app.schemas.platform import ModelCard
 
 def legacy_analysis(profile: DatasetProfile) -> dict:
     profiles = {p.name: p for p in profile.column_profiles}
+    cleaning = profile.cleaning_report
+    def removed(code):
+        return sum(item.count for item in cleaning.issues if item.code == code) if cleaning else 0
 
     def candidate(name, confidence=0.9, reason="Atributo sensível sugerido pelo nome."):
         p = profiles[name]
@@ -15,14 +18,14 @@ def legacy_analysis(profile: DatasetProfile) -> dict:
     sensitive = [candidate(c) for c in profile.fairness_features]
     numeric = sum(p.dtype == "numeric" for p in profile.column_profiles)
     return {"resumo": {"registros_encontrados": profile.rows, "colunas_encontradas": profile.columns,
-             "linhas_vazias_removidas": 0, "colunas_vazias_removidas": 0, "colunas_renomeadas": 0,
-             "linhas_duplicadas": profile.duplicates, "celulas_ausentes": round(profile.missing_cells_percentage / 100 * profile.rows * profile.columns),
+             "linhas_vazias_removidas": removed("EMPTY_ROWS"), "colunas_vazias_removidas": 0, "colunas_renomeadas": 0,
+             "linhas_duplicadas": removed("DUPLICATE_ROWS") + profile.duplicates, "celulas_ausentes": round(profile.missing_cells_percentage / 100 * profile.rows * profile.columns),
              "colunas_com_ausentes": sum(p.missing_percentage > 0 for p in profile.column_profiles),
              "colunas_numericas": numeric, "colunas_nao_numericas": profile.columns - numeric},
             "recomendacoes": {"target_recomendado": targets[0] if targets else None,
                               "sensitive_recomendado": sensitive[0] if sensitive else None,
                               "top_targets": targets[:3], "top_sensitive": sensitive[:3],
-                              "mensagens": [i.message for i in profile.health.issues]},
+                              "mensagens": [i.message for i in profile.health.issues] + ([f"{item.message} Quantidade: {item.count}." for item in cleaning.issues] if cleaning else [])},
             "colunas": [{"coluna": p.name, "tipo_inferido": p.dtype, "valores_ausentes": round(p.missing_percentage / 100 * profile.rows),
                          "taxa_ausentes": p.missing_percentage / 100, "valores_unicos": p.unique_values, "valores_exemplo": []} for p in profile.column_profiles]}
 

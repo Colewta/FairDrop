@@ -1,11 +1,17 @@
 import type { ModelMetrics, ModelType } from './model';
 
+export interface CleaningReport {
+  input_rows: number; output_rows: number; removed_rows: number;
+  issues: { code: string; action: string; message: string; column: string | null; count: number; rows: number[] }[];
+}
+
 export interface ColumnProfile {
   name: string; dtype: string; missing_percentage: number; unique_values: number;
   cardinality_ratio: number; min: number | null; max: number | null; mean: number | null;
   role_suggestion: string; tags: string[]; confidence: number; reasons: string[];
 }
 export interface DatasetProfile {
+  cleaning_report?: CleaningReport | null;
   import_info: Record<string, string | number>; import_warnings: string[];
   rows: number; columns: number; duplicates: number; missing_cells_percentage: number;
   column_profiles: ColumnProfile[]; selected_target: string | null; target_source: string;
@@ -27,7 +33,7 @@ export interface FairnessReport {
     metrics: Record<string, number | null>; status: string; explanation: string }[];
 }
 export interface CandidateResult {
-  variant: 'baseline' | 'reweighing';
+  variant: 'baseline' | MitigationMethod;
   algorithm: string; validation: Metrics; fairness: FairnessReport; score: number;
   score_components: Record<string, number>; effective_weights: Record<string, number>;
   cross_validation: Record<string, { mean: number; std: number }>;
@@ -43,7 +49,8 @@ export interface Explanation {
   probability: number | null; factors: Factor[]; global_importance: Record<string, number>; message: string;
 }
 export interface TrainingConfig {
-  mitigation?: 'none' | 'reweighing'; mitigation_features?: string[];
+  mitigation?: MitigationMethod | 'none'; mitigation_features?: string[];
+  mitigation_strength?: number; fairness_constraint?: 'demographic_parity' | 'equalized_odds'; prefer_mitigated?: boolean;
   target_rule?: { operator: 'ge' | 'le'; value: number };
   dataset_id: string; target: string; positive_class: string; name: string;
   sensitive_features: string[]; identifier_column: string | null; reference_groups?: Record<string, string>;
@@ -53,11 +60,19 @@ export interface TrainingConfig {
   calibrate: boolean; cv_folds: number; balance_classes: boolean; selection_weights?: Record<string, number>;
 }
 export interface MitigationReport {
+  stage?: string; implementation?: string; parameters?: Record<string, unknown>; audit?: Record<string, unknown>;
   method: string; status: string; selected: boolean; features: string[]; algorithm: string | null; message: string;
   before_metrics: Metrics | null; after_metrics: Metrics | null; before_fairness: FairnessReport | null; after_fairness: FairnessReport | null;
   weight_summary: Record<string, number>; warnings: string[];
 }
+export type MitigationMethod = 'reweighing' | 'resampling' | 'lfr' | 'adversarial' | 'constraints' | 'regularization';
+export interface MitigationOptions {
+  methods: { id: MitigationMethod; name: string; stage: string; implementation: string }[];
+  groups: { column: string; suggested: boolean; eligibility: Record<MitigationMethod, { available: boolean; reason: string }>; audit: { cells_before?: { group: string; negative: number; positive: number }[] } }[];
+  training_rows: number; constraint: string; note: string;
+}
 export interface ModelCard {
+  cleaning_report?: CleaningReport | null;
   mitigation: MitigationReport;
   is_demo: boolean;
   id: string; institution_id: string; version: string; name: string; created_at: string;
@@ -76,6 +91,7 @@ export interface StudentPrediction {
   top_factors: Factor[]; explanation_status: string;
 }
 export interface PredictionBatch {
+  cleaning_report?: CleaningReport | null;
   group_filters: Record<string, string[]>;
   id: string; model_id: string; name: string; created_at: string; total: number;
   summary: Record<'low' | 'medium' | 'high', number>; average_risk: number; warnings: string[];
