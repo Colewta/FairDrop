@@ -1,0 +1,102 @@
+import { expect, test } from '@playwright/test';
+
+const api = 'http://127.0.0.1:8017';
+function csv() {
+  const rows = ['matricula,frequencia,nota,curso,sexo,situacao'];
+  for (let i = 0; i < 240; i++) rows.push(`RA${i},${30 + i * 17 % 70},${3 + (i * 13 % 70) / 10},${i % 3 ? 'A' : 'B'},${i % 2 ? 'M' : 'F'},${(i * 17 % 70) + (i * 7 % 50) < 60 ? 'Evadido' : 'Ativo'}`);
+  return rows.join('\n');
+}
+
+test('result sections preserve metric selection, context and keyboard navigation', async ({ page, request }) => {
+  const models = await (await request.get(`${api}/models`)).json();
+  const model = models.find((m: { is_demo: boolean }) => m.is_demo);
+  await page.goto(`/models/${model.id}`);
+  await page.getByRole('button', { name: 'Abrir ou recolher menu' }).click();
+  await expect(page.getByRole('button', { name: 'Abrir ou recolher menu' })).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByRole('navigation', { name: 'Navegação principal' }).getByRole('link', { name: 'Análises', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Abrir ou recolher menu' }).click();
+  await expect(page.getByRole('tab', { name: 'Visão geral', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('definition').filter({ hasText: model.dataset_name })).toBeVisible();
+  await page.getByRole('tab', { name: 'Desempenho', exact: true }).click();
+  await page.getByLabel('Medida de desempenho').selectOption('precision');
+  await page.getByRole('tab', { name: 'Equidade', exact: true }).click();
+  await expect(page.getByText('Disparate Impact · DI', { exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'Desempenho', exact: true }).click();
+  await expect(page.getByLabel('Medida de desempenho')).toHaveValue('precision');
+  await page.getByRole('tab', { name: 'Desempenho', exact: true }).press('ArrowRight');
+  await expect(page.getByRole('tab', { name: 'Equidade', exact: true })).toBeFocused();
+  await page.reload();
+  await expect(page.getByRole('tab', { name: 'Equidade', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('tab', { name: 'Equidade', exact: true }).press('End');
+  await expect(page.getByRole('heading', { name: 'Ficha do modelo' })).toBeVisible();
+  await expect(page.getByRole('definition').filter({ hasText: model.positive_class }).first()).toBeVisible();
+  await page.getByRole('tab', { name: 'Ficha da análise', exact: true }).press('Home');
+  await expect(page.getByRole('heading', { name: 'Resumo da análise' })).toBeVisible();
+  await page.screenshot({ path: 'test-results/workspace-results-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('link', { name: /Preparar experimento/ }).click();
+  await expect(page.getByRole('tab', { name: 'Mitigação', exact: true })).toBeInViewport();
+  await expect(page.getByRole('tab', { name: 'Mitigação', exact: true })).toHaveAttribute('aria-selected', 'true');
+});
+
+test('configuration survives modes, navigation, refresh and return from the saved result', async ({ page, request }) => {
+  const upload = async (name: string) => (await request.post(`${api}/datasets`, { multipart: { file: { name, mimeType: 'text/csv', buffer: Buffer.from(csv()) } } })).json();
+  const first = await upload('rascunho-a.csv');
+  const second = await upload('rascunho-b.csv');
+  await page.goto(`/datasets/${first.id}`);
+  await page.getByRole('button', { name: 'Continuar', exact: true }).click();
+  await page.getByRole('button', { name: 'Evadido', exact: false }).click();
+  await page.getByRole('button', { name: 'Confirmar resultado' }).click();
+  await page.getByLabel('Nome da análise').fill('Análise com rascunho preservado');
+  await page.getByRole('button', { name: 'Modo simples', exact: true }).click();
+  await page.getByLabel('Limiar de classificação', { exact: false }).fill('1.2');
+  await expect(page.getByRole('alert')).toContainText('entre 0,01 e 0,99');
+  await expect(page.getByRole('button', { name: 'Treinar e analisar', exact: true })).toBeDisabled();
+  await page.getByLabel('Limiar de classificação', { exact: false }).fill('0.42');
+  await page.getByRole('button', { name: 'Modo técnico', exact: true }).click();
+  await expect(page.getByLabel('Nome da análise')).toHaveValue('Análise com rascunho preservado');
+  await page.getByRole('navigation', { name: 'Navegação principal' }).getByRole('link', { name: 'Bases de dados' }).click();
+  await page.getByRole('link', { name: /rascunho-a.csv/ }).click();
+  await expect(page.getByLabel('Nome da análise')).toHaveValue('Análise com rascunho preservado');
+  await page.reload();
+  await page.getByText('Ajustes avançados do treinamento', { exact: true }).click();
+  await expect(page.getByLabel('Limiar de classificação', { exact: false })).toHaveValue('0.42');
+  await page.goto(`/datasets/${second.id}`);
+  await expect(page.getByRole('heading', { name: 'Leitura do arquivo concluída' })).toBeVisible();
+  await page.goto(`/datasets/${first.id}`);
+  await page.getByRole('button', { name: 'Treinar e analisar', exact: true }).click();
+  await page.waitForURL(/\/models\/[a-f0-9]+$/, { timeout: 150000 });
+  const identifier = page.url().split('/').pop();
+  const result = await (await request.get(`${api}/models/${identifier}`)).json();
+  expect(result.config.threshold).toBe(.42);
+  await page.getByRole('link', { name: 'Rever configuração', exact: true }).click();
+  await page.getByText('Ajustes avançados do treinamento', { exact: true }).click();
+  await expect(page.getByLabel('Limiar de classificação', { exact: false })).toHaveValue('0.42');
+  await page.getByLabel('Limiar de classificação', { exact: false }).fill('0.55');
+  await expect(page.getByText(/A configuração foi alterada/)).toBeVisible();
+  const unchanged = await (await request.get(`${api}/models/${identifier}`)).json();
+  expect(unchanged.config.threshold).toBe(.42);
+  expect(unchanged.metrics).toEqual(result.metrics);
+});
+
+test('mobile navigation is accessible and an API failure can be retried', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Abrir ou recolher menu' })).toHaveAttribute('aria-expanded', 'false');
+  await page.getByRole('button', { name: 'Abrir ou recolher menu' }).click();
+  await expect(page.getByRole('navigation', { name: 'Navegação principal' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('navigation', { name: 'Navegação principal' })).not.toBeVisible();
+  await page.getByRole('button', { name: 'Abrir ou recolher menu' }).click();
+  await page.getByRole('navigation', { name: 'Navegação principal' }).getByRole('link', { name: 'Análises', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Análises salvas' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  await page.screenshot({ path: 'test-results/workspace-mobile.png', fullPage: true });
+  await page.route('**/datasets?*', route => route.fulfill({ status: 503, json: { detail: 'A base está temporariamente indisponível.' } }));
+  await page.goto('/datasets');
+  await expect(page.getByRole('alert')).toContainText('temporariamente indisponível');
+  await page.unroute('**/datasets?*');
+  await page.getByRole('button', { name: 'Tentar novamente' }).click();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Bases de alunos' })).toBeVisible();
+});

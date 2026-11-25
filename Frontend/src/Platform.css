@@ -20,12 +20,12 @@
 .platform-shell h4 { font-size: .98rem; }
 .platform-shell .summary-card > p, .platform-shell .chart-card > p { color: var(--text-soft); font-size: .92rem; }
 .platform-shell .summary-card, .platform-shell .chart-card, .platform-shell .upload-card { padding: 28px; }
-.platform-shell button:not(.primary-button) { min-height: 40px; padding: 9px 14px; border: 1px solid var(--line-strong); border-radius: 5px; color: #42515b; background: white; font-size: .87rem; transition: border-color .15s, background .15s; }
-.platform-shell button:not(.primary-button):hover:not(:disabled) { border-color: #8299a1; background: #f6f8f7; }
+:where(.platform-shell) button:not(.primary-button) { min-height: 40px; padding: 9px 14px; border: 1px solid var(--line-strong); border-radius: 5px; color: #42515b; background: white; font-size: .87rem; transition: border-color .15s, background .15s; }
+:where(.platform-shell) button:not(.primary-button):hover:not(:disabled) { border-color: #8299a1; background: #f6f8f7; }
 .platform-shell button:disabled { opacity: .55; cursor: not-allowed; }
 .platform-shell .platform-nav > button { color: var(--text-soft); border-color: #dce0db; background: transparent; text-align: left; font-size: .83rem; }
 .platform-shell .platform-nav > button[aria-pressed="true"] { color: var(--brand); border-color: #9eafb7; }
-.platform-shell a:not(.primary-button):not(.resource-card):not(.platform-brand) { color: var(--brand); }
+.platform-shell a:where(:not(.primary-button):not(.resource-card):not(.platform-brand)) { color: var(--brand); }
 .platform-shell .platform-nav nav a { color: #626d73; }
 .platform-shell .platform-nav nav a.active { color: var(--brand-strong); }
 .platform-shell .field-group { gap: 8px; margin: 10px 0; }

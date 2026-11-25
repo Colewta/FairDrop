@@ -79,7 +79,8 @@ test('a tutor explores metrics and mitigation in simple mode on desktop and mobi
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/models');
   await page.getByRole('link', { name: /Exemplo pronto · acompanhamento acadêmico/ }).click();
-  await expect(page.getByRole('navigation', { name: 'Caminho para entender a análise' })).toBeVisible();
+  await expect(page.getByRole('tablist', { name: 'Seções da análise' })).toBeVisible();
+  await page.getByRole('tab', { name: 'Desempenho', exact: true }).click();
   const performance = page.locator('#entender-desempenho');
   await expect(performance.getByText(/receberam alerta e .* ficaram sem alerta/)).toBeVisible();
   for (const key of ['precision', 'accuracy', 'f1', 'roc_auc', 'pr_auc', 'specificity', 'balanced_accuracy', 'brier_score']) {
@@ -89,7 +90,7 @@ test('a tutor explores metrics and mitigation in simple mode on desktop and mobi
   }
   await page.getByLabel('Medida de desempenho').selectOption('recall');
   const fairness = page.locator('#entender-equidade');
-  await page.getByRole('link', { name: '2. Equidade' }).click();
+  await page.getByRole('tab', { name: 'Equidade', exact: true }).click();
   await expect(fairness.getByText('Disparate Impact · DI', { exact: true })).toBeVisible();
   await expect(fairness.getByText(/Taxas observadas:/)).toBeVisible();
   const selector = page.getByLabel('Grupos de comparação');
@@ -98,6 +99,7 @@ test('a tutor explores metrics and mitigation in simple mode on desktop and mobi
     await selector.selectOption(String(i));
     await expect(fairness.getByText('Grupo analisado:', { exact: false })).toBeVisible();
   }
+  await fairness.getByText('Como interpretar e o que conferir', { exact: true }).click();
   for (const key of ['statistical_parity_difference', 'equal_opportunity_difference', 'average_odds_difference', 'fairness_score']) {
     await page.getByLabel('Medida de equidade').selectOption(key);
     await expect(fairness.getByText('O que conferir com os alunos')).toBeVisible();
@@ -117,7 +119,7 @@ test('a tutor explores metrics and mitigation in simple mode on desktop and mobi
     await expect(page.getByRole('heading', { name: 'Como avaliar o resultado' })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
   }
-  await page.getByRole('link', { name: '2. Equidade' }).click();
+  await page.getByRole('tab', { name: 'Equidade', exact: true }).click();
   await page.screenshot({ path: 'test-results/metric-education-mobile.png', fullPage: true });
   expect(errors).toEqual([]);
 });
@@ -135,8 +137,10 @@ test('missing groups still explain concepts without fabricated results in the in
   });
   await page.goto('/models');
   await page.getByRole('link', { name: /Exemplo pronto · acompanhamento acadêmico/ }).click();
+  await page.getByRole('tab', { name: 'Equidade', exact: true }).click();
   await expect(page.getByText(/Não há pares de grupos com dados suficientes/)).toBeVisible();
   await expect(page.locator('#entender-equidade .metric-lesson-heading > strong')).toHaveText('Indisponível');
+  await page.getByRole('tab', { name: 'Desempenho', exact: true }).click();
   await page.getByLabel('Medida de desempenho').selectOption('precision');
   await expect(page.locator('#entender-desempenho .metric-lesson-heading > strong')).toHaveText('Indisponível');
   await expect(page.locator('#entender-desempenho .metric-reading')).toContainText('Nenhum alerta foi emitido');

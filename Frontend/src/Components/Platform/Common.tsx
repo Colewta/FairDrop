@@ -3,7 +3,7 @@ import type { DatasetProfile, StudentPrediction } from '../../types/platform';
 export { FairnessIndicator } from './FairnessIndicator';
 
 import { percent } from '../../services/format';
-export function ErrorNotice({ message }: { message: string | null }) { return message ? <p className="form-error" role="alert">{message}</p> : null; }
+export function ErrorNotice({ message, onRetry }: { message: string | null; onRetry?: () => void }) { return message ? <div className="form-error" role="alert"><p>{message}</p>{onRetry && <button onClick={onRetry} type="button">Tentar novamente</button>}</div> : null; }
 export function Loading() { return <p className="loading-state" role="status">Carregando…</p>; }
 export function Empty({ children }: { children: React.ReactNode }) { return <div className="empty-state">{children}</div>; }
 export function MetricCard({ label, value, detail }: { label: string; value: string | number; detail?: string }) {

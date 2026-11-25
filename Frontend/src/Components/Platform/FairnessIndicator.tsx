@@ -1,4 +1,5 @@
 import { useId, useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { FairnessReport } from '../../types/platform';
 import { decimal, fairnessMetrics } from '../../services/metricEducation';
 import { percent } from '../../services/format';
@@ -39,7 +40,7 @@ export function FairnessIndicator({ report, technical }: { report: FairnessRepor
       <p>Índice geral de equidade: <strong>{decimal(report.score)}</strong>. É um resumo interno: mostra o menor índice entre as comparações disponíveis. Um valor de 0,8 não significa “80% de justiça”. Para decidir o que precisa melhorar, leia cada medida e veja os erros dos grupos.</p>
       <p>{report.semantics}</p>
     </details>
-    <p>Esses números mostram onde há diferenças. Na etapa seguinte, você pode testar ajustes e conferir se elas diminuem. Também vale revisar a planilha e a forma de oferecer apoio aos alunos. <a href="#mitigacao-modelo">Consultar opções de mitigação</a></p>
+    <p>Esses números mostram onde há diferenças. Na etapa seguinte, você pode testar ajustes e conferir se elas diminuem. Também vale revisar a planilha e a forma de oferecer apoio aos alunos. <Link to="?section=mitigation">Consultar opções de mitigação</Link></p>
     <p className="method-sources">Referências: <a href="https://aif360.readthedocs.io/en/stable/modules/generated/aif360.metrics.ClassificationMetric.html" target="_blank" rel="noreferrer">AIF360 — métricas</a> · <a href="https://fairlearn.org/main/user_guide/assessment/common_fairness_metrics.html" target="_blank" rel="noreferrer">Fairlearn — interpretação e limites</a>.</p>
   </article>;
 }

@@ -27,6 +27,7 @@ test('dirty files are cleaned automatically and the tutor can inspect the affect
   await page.getByRole('button', { name: 'Confirmar resultado' }).click();
   await page.getByRole('button', { name: 'Treinar e analisar', exact: true }).click();
   await page.waitForURL(/\/models\/[a-f0-9]+$/, { timeout: 150000 });
+  await expect(page.getByRole('heading', { name: 'Resumo da análise' })).toBeVisible();
   await expect(cleaning).toBeVisible();
   await cleaning.getByText('Ver ajustes e localização', { exact: true }).click();
   await expect(cleaning.getByText(/Registros sem resultado conhecido foram removidos do treino/)).toBeVisible();
@@ -51,7 +52,7 @@ test('historical upload, training, current students, explanation and dashboard',
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Acompanhamento dos alunos' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Visão geral' })).toBeVisible();
   await page.getByRole('link', { name: 'Importar minha base' }).click();
   await page.locator('input[type=file]').setInputFiles({ name: 'historico.csv', mimeType: 'text/csv', buffer: Buffer.from(historicalCsv()) });
   await page.getByRole('button', { name: 'Importar arquivo' }).click();
@@ -61,6 +62,7 @@ test('historical upload, training, current students, explanation and dashboard',
   await page.getByRole('button', { name: 'Confirmar resultado' }).click();
   await page.getByRole('button', { name: 'Treinar e analisar', exact: true }).click();
   await page.waitForURL(/\/models\/[a-f0-9]+$/, { timeout: 150000 });
+  await page.getByRole('tab', { name: 'Ficha da análise' }).click();
   await expect(page.getByRole('heading', { name: 'Ficha do modelo' })).toBeVisible();
   await page.screenshot({ path: 'test-results/model-card.png', fullPage: true });
   await page.getByRole('link', { name: 'Avaliar alunos atuais' }).click();
@@ -112,6 +114,7 @@ test('a continuous result can be configured through the guided interface', async
   await expect(page.getByText('renda ≤ 10000', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Treinar e analisar', exact: true }).click();
   await page.waitForURL(/\/models\/[a-f0-9]+$/, { timeout: 150000 });
+  await page.getByRole('tab', { name: 'Ficha da análise' }).click();
   await expect(page.getByRole('heading', { name: 'Ficha do modelo' })).toBeVisible();
 });
 
@@ -122,16 +125,20 @@ test('a first-time user can explore saved models without uploading a file', asyn
   await expect(page.getByRole('heading', { name: 'Demonstração · 30 alunos fictícios' })).toBeVisible();
   await page.getByRole('link', { name: 'Revisar aluno' }).first().click();
   await expect(page.locator('.factor-list li')).not.toHaveCount(0, { timeout: 30000 });
-  await page.getByRole('link', { name: 'Modelos', exact: true }).click();
+  await page.getByRole('link', { name: 'Análises', exact: true }).click();
   await expect(page.getByText('Exemplo com dados fictícios')).toHaveCount(2);
 });
 
 test('a tutor can compare original and reweighed models', async ({ page }) => {
   await page.goto('/models');
   await page.getByRole('link', { name: /Exemplo pronto · acompanhamento acadêmico/ }).filter({ hasText: 'Exemplo com dados fictícios' }).click();
+  await page.getByRole('tab', { name: 'Mitigação', exact: true }).click();
   await page.getByRole('button', { name: 'Comparar com reponderação' }).click();
-  await expect(page.getByRole('heading', { name: 'Resultado do experimento' })).toBeVisible({ timeout: 150000 });
+  await page.waitForURL(/\/models\/[a-f0-9]+$/, { timeout: 150000 });
+  await page.getByRole('tab', { name: 'Mitigação', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Resultado do experimento' })).toBeVisible();
   await expect(page.getByRole('columnheader', { name: 'Após mitigação' })).toBeVisible();
+  await page.getByText('Entender as mudanças na avaliação', { exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Mudanças na avaliação' })).toBeVisible();
   await expect(page.getByText('Versão selecionada:', { exact: true })).toBeVisible();
   await page.screenshot({ path: 'test-results/mitigation.png', fullPage: true });
@@ -142,11 +149,14 @@ test('a tutor can apply resampling and export an experiment', async ({ page }) =
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/models');
   await page.getByRole('link', { name: /Exemplo pronto · acompanhamento acadêmico/ }).filter({ hasText: 'Exemplo com dados fictícios' }).click();
+  await page.getByRole('tab', { name: 'Mitigação', exact: true }).click();
   await expect(page.getByRole('radio')).toHaveCount(6);
   await page.getByRole('radio', { name: 'Reamostragem por grupo e resultado', exact: true }).check();
   await page.getByLabel('Usar a versão com a técnica aplicada, se o treinamento funcionar').check();
   await page.getByRole('button', { name: 'Executar experimento' }).click();
-  await expect(page.getByRole('heading', { name: 'Resultado do experimento' })).toBeVisible({ timeout: 150000 });
+  await page.waitForURL(/\/models\/[a-f0-9]+$/, { timeout: 150000 });
+  await page.getByRole('tab', { name: 'Mitigação', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Resultado do experimento' })).toBeVisible();
   await expect(page.getByText('A versão com a técnica aplicada foi salva porque você marcou', { exact: false })).toBeVisible();
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Baixar registro do experimento' }).click();
