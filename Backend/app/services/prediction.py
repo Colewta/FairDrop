@@ -12,7 +12,6 @@ from app.services.repository import Repository, new_id, now
 from app.services.semantic_analyzer import normalize_name
 from app.services.explanation_context import CONTEXT_VERSION, build_context, enrich_explanation, scenario_allowed
 from app.services.data_cleaning import add_issue, clean_feature_values, clean_identifiers, clean_table, cleaning_messages, finish_report, report_for
-from app.services.leakage_detector import LeakageDetector
 
 
 def risk_level(probability: float, low: float, medium: float) -> str:
@@ -27,9 +26,8 @@ class RiskPredictor:
         card, artifact = ModelRegistry(self.repository).load(model_id)
         # Pipelines antigos não são corrigidos ao atualizar o detector. Evitar
         # novas avaliações com metadados pós-evento que nunca foram revisados.
-        schema = pd.DataFrame(columns=list(dict.fromkeys([*card.features, card.target])))
-        unsafe = [alert.column for alert in LeakageDetector().detect(schema, card.target, [])
-                  if alert.risk == "HIGH" and alert.column not in card.config.reviewed_leakage]
+        from app.services.model_registry import unsafe_model_features
+        unsafe = unsafe_model_features(card)
         if unsafe:
             raise DatasetError("UNSAFE_SAVED_MODEL", "Este modelo foi treinado com informações que podem revelar o resultado: "
                                + ", ".join(unsafe) + ". Treine um novo modelo com a proteção atual antes de avaliar alunos.")

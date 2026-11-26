@@ -3,10 +3,18 @@ from hashlib import sha256
 from pathlib import Path
 
 import joblib
+import pandas as pd
 
 from app.schemas.dataset import DatasetError
 from app.schemas.platform import ModelCard
 from app.services.repository import Repository, checked_id, new_id
+from app.services.leakage_detector import LeakageDetector
+
+
+def unsafe_model_features(card: ModelCard) -> list[str]:
+    schema = pd.DataFrame(columns=list(dict.fromkeys([*card.features, card.target])))
+    return [alert.column for alert in LeakageDetector().detect(schema, card.target, [])
+            if alert.risk == "HIGH" and alert.column not in card.config.reviewed_leakage]
 
 
 class ArtifactStore:

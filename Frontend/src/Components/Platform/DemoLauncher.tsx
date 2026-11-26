@@ -4,14 +4,14 @@ import { api, getApiErrorMessage } from '../../services/api';
 import type { PredictionBatch } from '../../types/platform';
 import { ErrorNotice } from './Common';
 
-export function DemoLauncher({ compact = false, modelId }: { compact?: boolean; modelId?: string }) {
+export function DemoLauncher({ compact = false, modelId, secondary = false }: { compact?: boolean; modelId?: string; secondary?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
   async function run() { setBusy(true); setError(null);
     try { const response = await api.post<PredictionBatch>(`/demo/predict${modelId ? `?model_id=${modelId}` : ''}`); navigate(`/predictions/${response.data.id}`); }
     catch (err) { setError(getApiErrorMessage(err)); } finally { setBusy(false); } }
-  return <div className={compact ? 'demo-compact' : 'demo-launcher'}>{!compact && <><span className="section-kicker">Exemplo de uso</span><h2>Conhecer a aplicação</h2><p>Se é sua primeira vez aqui, comece pelo exemplo. Você vai ver uma turma de 30 alunos fictícios, com previsões já preparadas. Abra um aluno para entender a porcentagem e os fatores que pesaram na conta.</p></>}<button type="button" className="primary-button" onClick={() => void run()} disabled={busy}>{busy ? 'Abrindo avaliação…' : 'Abrir avaliação de exemplo'}</button><ErrorNotice message={error} /><small>Os dados deste exemplo são fictícios.</small></div>;
+  return <div className={compact ? 'demo-compact' : 'demo-launcher'}>{!compact && <><span className="section-kicker">Exemplo de uso</span><h2>Conhecer a aplicação</h2><p>Explore uma avaliação de 30 alunos fictícios antes de enviar seu histórico.</p></>}<button type="button" className={secondary?'quiet-button':'primary-button'} onClick={() => void run()} disabled={busy}>{busy ? 'Abrindo avaliação…' : 'Abrir avaliação de exemplo'}</button><ErrorNotice message={error} /><small>Os dados deste exemplo são fictícios.</small></div>;
 }
 
 export function DownloadExample({ kind, children }: { kind: 'historical' | 'current'; children: React.ReactNode }) {

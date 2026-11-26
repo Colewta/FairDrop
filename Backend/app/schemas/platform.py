@@ -57,6 +57,9 @@ class TrainingConfig(BaseModel):
 
 
 class Metrics(BaseModel):
+    roc_curve: list[dict[str, float]] = Field(default_factory=list)
+    precision_recall_curve: list[dict[str, float]] = Field(default_factory=list)
+    probability_histogram: list[dict[str, float | int]] = Field(default_factory=list)
     accuracy: float
     precision: float
     recall: float
@@ -148,6 +151,9 @@ class MitigationReport(BaseModel):
 
 
 class ModelCard(BaseModel):
+    prediction_available: bool | None = None
+    prediction_unavailable_reason: str | None = None
+    training_metadata: dict = Field(default_factory=dict)
     cleaning_report: CleaningReport | None = None
     mitigation: MitigationReport = Field(default_factory=MitigationReport)
     is_demo: bool = False
@@ -182,11 +188,24 @@ class ModelCard(BaseModel):
 
 
 class DatasetRecord(BaseModel):
+    original_name: str | None = None
+    sha256: str | None = None
     is_demo: bool = False
     id: str
     name: str
     created_at: str
     profile: DatasetProfile
+
+
+class DatasetRename(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+
+    @model_validator(mode="after")
+    def clean_name(self):
+        self.name = self.name.strip()
+        if not self.name:
+            raise ValueError("Informe um nome para a base.")
+        return self
 
 
 class TrainingRun(BaseModel):

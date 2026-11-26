@@ -21,8 +21,13 @@ export interface DatasetProfile {
   leakage_alerts: { column: string; risk: string; reason: string }[];
   health: { issues: { severity: string; code: string; message: string; column: string | null }[]; checks: string[] };
 }
-export interface DatasetRecord { id: string; name: string; created_at: string; profile: DatasetProfile; is_demo: boolean }
+export interface DatasetRecord { id: string; name: string; original_name?: string | null; sha256?: string | null; created_at: string; profile: DatasetProfile; is_demo: boolean }
+export interface DatasetSummary { id: string; name: string; original_name?: string | null; created_at: string; is_demo: boolean; rows: number; columns: number; format: string | null; missing_percentage: number; model_count: number }
+export interface DatasetCatalog { items: DatasetSummary[]; total: number; limit: number; offset: number }
 export interface Metrics extends ModelMetrics {
+  roc_curve?: { fpr: number; tpr: number }[];
+  precision_recall_curve?: { recall: number; precision: number }[];
+  probability_histogram?: { start: number; end: number; negative: number; positive: number }[];
   pr_auc: number | null; specificity: number; balanced_accuracy: number; brier_score: number;
   calibration_curve: { predicted: number; observed: number }[];
 }
@@ -49,6 +54,7 @@ export interface Explanation {
   probability: number | null; factors: Factor[]; global_importance: Record<string, number>; message: string;
 }
 export interface TrainingConfig {
+  source_model_id?: string | null;
   mitigation?: MitigationMethod | 'none'; mitigation_features?: string[];
   mitigation_strength?: number; fairness_constraint?: 'demographic_parity' | 'equalized_odds'; prefer_mitigated?: boolean;
   target_rule?: { operator: 'ge' | 'le'; value: number };
@@ -72,6 +78,9 @@ export interface MitigationOptions {
   training_rows: number; constraint: string; note: string;
 }
 export interface ModelCard {
+  prediction_available?: boolean | null;
+  prediction_unavailable_reason?: string | null;
+  training_metadata?: { random_state?: number; split_method?: string; versions?: Record<string, string | null> };
   cleaning_report?: CleaningReport | null;
   mitigation: MitigationReport;
   is_demo: boolean;

@@ -39,7 +39,13 @@ export function getApiErrorMessage(error: unknown) {
     const detail = error.response?.data?.detail;
 
     if (Array.isArray(detail)) {
-      return detail.map((item) => item.msg ?? JSON.stringify(item)).join(' ');
+      const labels: Record<string,string> = { name:'nome', threshold:'limiar de alerta', low_risk_max:'início do risco médio', medium_risk_max:'início do risco alto', algorithms:'algoritmos', target:'resultado', positive_class:'classe positiva' };
+      return detail.map(item => {
+        const key=Array.isArray(item.loc)?String(item.loc[item.loc.length-1]):'';
+        const prefix=labels[key]?`Revise o campo ${labels[key]}. `:'';
+        const message=typeof item.msg==='string'?item.msg.replace(/^Value error, /,''):'';
+        return prefix+(item.type==='missing'?'Preencha este campo.':/^[A-Z][a-z]+ (should|must)/.test(message)?'O valor informado não é aceito.':message||'Confira o valor informado.');
+      }).join(' ');
     }
 
     if (typeof detail === 'string') {
@@ -54,15 +60,15 @@ export function getApiErrorMessage(error: unknown) {
         return detail.mensagem;
       }
 
-      return JSON.stringify(detail);
+      return 'Não foi possível concluir esta operação. Confira os dados e tente novamente.';
     }
 
     if (error.code === 'ECONNABORTED') {
-      return 'A análise demorou mais que o esperado. Verifique o backend e tente novamente.';
+      return 'Não recebemos uma resposta a tempo. Confira se o resultado já foi salvo antes de reenviar.';
     }
 
     if (!error.response) {
-      return 'Não foi possível conectar ao backend. Confirme se a API FastAPI está rodando em localhost:8000.';
+      return 'Não foi possível conectar ao serviço. Confira a conexão e tente novamente. Se estiver usando a instalação local, verifique se ela foi iniciada.';
     }
   }
 

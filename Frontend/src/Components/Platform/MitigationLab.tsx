@@ -3,7 +3,7 @@ import type { MitigationMethod, MitigationOptions, ModelCard, TrainingConfig, Tr
 import { api, getApiErrorMessage } from '../../services/api';
 import { useResource } from '../../services/platformApi';
 import { useSessionDraft } from '../../services/useSessionDraft';
-import { percent } from '../../services/format';
+import MitigationComparison from './MitigationComparison';
 import { ErrorNotice, Loading } from './Common';
 import { GroupErrorTable } from './GroupErrorTable';
 import TrainingProgress from './TrainingProgress';
@@ -18,9 +18,6 @@ const descriptions: Record<MitigationMethod, { how: string; limit: string }> = {
   constraints: { how: 'Compara opções de previsão tentando atender ao objetivo que você escolheu: aproximar a frequência dos alertas ou os erros entre grupos.', limit: 'Usa a busca GridSearch, do Fairlearn, com regressão logística. Como testa um número limitado de opções, pode não alcançar o objetivo, principalmente com novos alunos.' },
   regularization: { how: 'Durante o aprendizado, dá um custo extra às diferenças entre as probabilidades médias dos grupos. Assim, o sistema tenta reduzir essas diferenças enquanto aprende a prever o resultado.', limit: 'É uma versão experimental feita no FairDrop com regressão logística. Médias parecidas ainda podem esconder diferenças nos alertas; confira os erros de cada grupo.' },
 };
-const fairnessLabels: Record<string, string> = { disparate_impact: 'Razão entre taxas de alerta (DI)', statistical_parity_difference: 'Diferença nas taxas de alerta (SPD)', equal_opportunity_difference: 'Diferença na detecção dos casos reais (EOD)', average_odds_difference: 'Média das diferenças de detecção e falsos alertas (AOD)' };
-const metric = (value: number | null | undefined) => value == null ? 'Indisponível' : value.toFixed(3);
-
 export default function MitigationLab({ model }: { model: ModelCard }) {
   const [feature, setFeature] = useSessionDraft(`mitigation:${model.id}:feature`, model.sensitive_features[0] ?? '');
   const [method, setMethod] = useSessionDraft<MitigationMethod>(`mitigation:${model.id}:method`, model.mitigation.method in descriptions ? model.mitigation.method as MitigationMethod : 'reweighing');
@@ -53,36 +50,20 @@ export default function MitigationLab({ model }: { model: ModelCard }) {
     <p>O resultado acompanhado é <strong>{model.positive_class}</strong>. Compare tanto os falsos alertas quanto os casos que passaram sem aviso. Um ajuste pode melhorar uma dessas medidas e piorar outra.</p>
     {report.method !== 'none' && <section className="mitigation-result" aria-label="Resultado da mitigação"><h4>Resultado do experimento</h4><p><strong>{report.implementation ?? report.method}</strong></p><p>{report.message}</p>
       <details><summary>Entender as mudanças na avaliação</summary><MitigationReading report={report} /></details>
-      {report.before_metrics && report.after_metrics && <><p>Para comparar, o FairDrop ensinou duas versões com os mesmos dados e o mesmo método de previsão ({report.algorithm}): uma sem o ajuste e outra com ele. As duas foram avaliadas em exemplos separados do aprendizado. A análise salva usa {model.algorithm}, {report.selected ? 'com a técnica aplicada' : 'sem a técnica aplicada'}.</p>
-        <div className="table-scroll"><table className="data-table"><thead><tr><th>Indicador no teste</th><th>Antes</th><th>Após mitigação</th></tr></thead><tbody>
-          <tr><th>Casos de risco identificados</th><td>{percent(report.before_metrics.recall)}</td><td>{percent(report.after_metrics.recall)}</td></tr>
-          <tr><th>Precisão dos alertas</th><td>{percent(report.before_metrics.precision)}</td><td>{percent(report.after_metrics.precision)}</td></tr>
-          <tr><th>Acertos</th><td>{percent(report.before_metrics.accuracy)}</td><td>{percent(report.after_metrics.accuracy)}</td></tr>
-          <tr><th>Erro das probabilidades — Brier (menor é melhor)</th><td>{metric(report.before_metrics.brier_score)}</td><td>{metric(report.after_metrics.brier_score)}</td></tr>
-        </tbody></table></div>
-        {report.after_fairness?.comparisons.map(after => {
-          const before = report.before_fairness?.comparisons.find(b => b.feature === after.feature && b.group === after.group && b.reference === after.reference);
-          return <div key={`${after.feature}:${after.group}`}><h4>{after.feature}: {after.group} × {after.reference}</h4><div className="table-scroll"><table className="data-table"><thead><tr><th>Medida de equidade</th><th>Antes</th><th>Depois</th></tr></thead><tbody>{Object.entries(fairnessLabels).map(([key, label]) => <tr key={key}><th>{label}</th><td>{metric(before?.metrics[key])}</td><td>{metric(after.metrics[key])}</td></tr>)}</tbody></table></div></div>;
-        })}
-        <p>Como ler: DI igual a 1 significa a mesma proporção de alertas nos dois grupos. Nas outras três medidas, o ponto de comparação é 0, que indica diferenças iguais a zero naquela medida. Um número pode melhorar enquanto outro piora. “Indisponível” quer dizer que faltou informação para fazer a conta.</p>
-        <details><summary>Erros por grupo antes e depois</summary><h4>Antes</h4>{report.before_fairness && <GroupErrorTable report={report.before_fairness} />}<h4>Depois</h4>{report.after_fairness && <GroupErrorTable report={report.after_fairness} />}</details></>}
+      <MitigationComparison model={model}/>
+      <details><summary>Erros por grupo antes e depois</summary><h4>Antes</h4>{report.before_fairness&&<GroupErrorTable report={report.before_fairness}/>}<h4>Depois</h4>{report.after_fairness&&<GroupErrorTable report={report.after_fairness}/>}</details>
       {report.warnings.map(warning => <p className="notice" key={warning}>{warning}</p>)}
       <details><summary>Registro dos ajustes no treino</summary><p>Estes são os detalhes de como o teste foi feito. A reamostragem muda os exemplos usados para aprender; a reponderação muda quanto cada um conta; LFR transforma as informações; as outras técnicas mudam a forma de aprender. A sua planilha original não é editada.</p><pre className="code-panel">{JSON.stringify({ implementation: report.implementation, parameters: report.parameters, audit: report.audit, weights: report.weight_summary }, null, 2)}</pre></details>
       <button type="button" onClick={download}>Baixar registro do experimento</button>
     </section>}
-    <section className="mitigation-workbench"><h4>Preparar um experimento</h4><ErrorNotice message={options.error} />{options.loading && <Loading />}
+    <details className="experiment-setup" open={report.method==='none'||!!runId}><summary><h4>Preparar um experimento</h4></summary><section className="mitigation-workbench"><ErrorNotice message={options.error} />{options.loading && <Loading />}
       <label className="field-group">Comparar quais grupos?<select value={feature} onChange={e => setFeature(e.target.value)} disabled={!!runId || busy}><option value="">Escolher coluna da base</option>{options.data?.groups.map(g => <option key={g.column} value={g.column}>{g.column}{g.suggested ? ' · atributo sugerido' : ''}</option>)}</select></label>
       <details className="context-help"><summary>Como escolher os grupos?</summary><p>Escolha uma coluna que separe os alunos em grupos que façam sentido para a pergunta. Por exemplo, “turno” permite comparar diurno e noturno. Só é possível investigar diferenças por raça ou gênero se essas informações estiverem na base. Neste teste, a coluna escolhida serve para comparar e ajustar o aprendizado, mas não entra como pista para prever o resultado.</p></details>
       {group?.audit.cells_before && <details><summary>Ver quantos exemplos de cada grupo serão usados para aprender</summary><div className="table-scroll"><table className="data-table"><thead><tr><th>Grupo</th><th>Demais resultados</th><th>{model.positive_class}</th></tr></thead><tbody>{group.audit.cells_before.map(c => <tr key={c.group}><th>{c.group}</th><td>{c.negative}</td><td>{c.positive}</td></tr>)}</tbody></table></div></details>}
-      <fieldset className="mitigation-methods"><legend>Qual técnica deseja testar?</legend>{options.data?.methods.map(item => {
-        const allowed = group?.eligibility[item.id];
-        return <div className={`mitigation-method ${method === item.id ? 'selected' : ''}`} key={item.id}>
-          <span className="section-kicker">{item.stage === 'pre' ? 'Preparação dos dados' : 'Durante o treinamento'}</span>
-          <label><input type="radio" aria-label={item.name} name={`method-${model.id}`} value={item.id} checked={method === item.id} disabled={!allowed?.available || busy || !!runId} onChange={() => { setMethod(item.id); if (['reweighing', 'resampling', 'lfr'].includes(item.id)) setConstraint('demographic_parity'); }} /> <strong>{item.name}</strong></label>
-          {['adversarial', 'regularization'].includes(item.id) && <small className="notice">Implementação experimental do FairDrop</small>}<details><summary>Como funciona e quais os limites</summary><p>{descriptions[item.id].how}</p><p>{descriptions[item.id].limit}</p><small>{item.implementation}</small></details>
-          <span className={allowed?.available ? 'positive-text' : 'critical-text'}>{allowed?.available ? 'Pode ser usada com estes grupos' : allowed?.reason ?? 'Escolha uma coluna acima para saber se esta técnica pode ser usada.'}</span>
-        </div>;
-      })}</fieldset>
+      <div className="mitigation-selector"><div className="technique-options">{[['pre','Pré-processamento'],['in','Durante o treinamento']].map(([stage,label])=><fieldset key={stage}><legend>{label}</legend>{options.data?.methods.filter(item=>stage==='pre'?item.stage==='pre':item.stage!=='pre').map(item=>{
+        const allowed=group?.eligibility[item.id];
+        return <label className={`technique-option ${method===item.id?'selected':''}`} key={item.id}><input type="radio" name={`method-${model.id}`} aria-label={item.name} value={item.id} checked={method===item.id} disabled={busy||!!runId} onChange={()=>{setMethod(item.id);if(['reweighing','resampling','lfr'].includes(item.id))setConstraint('demographic_parity');}}/><span><strong>{item.name}</strong><small>{allowed?.available?'Disponível':allowed?.reason??'Escolha os grupos para conferir os requisitos.'}</small></span></label>;
+      })}</fieldset>)}</div><section className="technique-context" aria-label="Técnica selecionada"><h4>{options.data?.methods.find(item=>item.id===method)?.name??'Técnica selecionada'}</h4>{['adversarial','regularization'].includes(method)&&<p className="notice">Implementação experimental do FairDrop</p>}<p>{descriptions[method].how}</p><p className="muted">{descriptions[method].limit}</p><small>{options.data?.methods.find(item=>item.id===method)?.implementation}</small><p className={eligibility?.available?'positive-text':'critical-text'}>{eligibility?.available?'Os grupos selecionados atendem aos requisitos.':eligibility?.reason??'Selecione os grupos para verificar a compatibilidade.'}</p></section></div>
       <div className="field-grid">{['adversarial', 'constraints', 'regularization'].includes(method) && <label className="field-group">Objetivo entre os grupos<select value={constraint} onChange={e => setConstraint(e.target.value as typeof constraint)} disabled={busy || !!runId}><option value="demographic_parity">Aproximar a proporção de alertas — paridade demográfica</option><option value="equalized_odds">Aproximar os acertos e falsos alertas — equalized odds</option></select></label>}
         {method !== 'reweighing' && <label className="field-group">Intensidade da técnica: {strength.toFixed(2)}<input type="range" min="0" max="1" step="0.1" value={strength} disabled={busy || !!runId} onChange={e => setStrength(Number(e.target.value))} /><small>De 0 a 1: valores maiores aumentam a força do ajuste. Isso não garante menos erros.</small></label>}
         <label className="field-group">Prioridade na comparação<select value={strategy} onChange={e => setStrategy(e.target.value as TrainingConfig['strategy'])} disabled={busy || !!runId}><option value="best_balanced">Equilibrar desempenho e equidade</option><option value="best_fairness">Priorizar menores diferenças entre grupos</option><option value="best_predictive">Priorizar identificação dos casos</option></select></label>
@@ -95,9 +76,9 @@ export default function MitigationLab({ model }: { model: ModelCard }) {
       <p>Ao terminar seus testes, confira a técnica escolhida com dados de outra turma ou período. Experimentar muitas opções no mesmo histórico ajuda a escolher uma, mas não mostra como ela vai funcionar com dados que você ainda não examinou.</p>
       </details>
       {eligibility && !eligibility.available && feature && <p className="notice" role="status">{eligibility?.reason}</p>}
-      <ErrorNotice message={error} /><button className="primary-button" disabled={busy || !!runId || options.loading || !eligibility?.available} onClick={() => void compare()}>{busy ? 'Iniciando experimento…' : method === 'reweighing' ? 'Comparar com reponderação' : 'Executar experimento'}</button>
+      <div className="experiment-actions"><ErrorNotice message={error} /><button className="primary-button" disabled={busy || !!runId || options.loading || !eligibility?.available} onClick={() => void compare()}>{busy ? 'Iniciando experimento…' : method === 'reweighing' ? 'Comparar com reponderação' : 'Executar experimento'}</button></div>
       {options.data && <details className="context-help"><summary>Como os requisitos são verificados</summary><p>{options.data.note}</p></details>}{runId && <><TrainingProgress id={runId} autoNavigate={autoNavigate} onStatus={run => setRunStatus(run.status)} />{(runStatus === 'completed' || runStatus === 'failed') && <button onClick={() => { setRunId(null); setAutoNavigate(false); }}>Preparar outro experimento</button>}</>}
-    </section>
+    </section></details>
     <details><summary>Outras ações para revisar os vieses</summary><MitigationGuide /></details>
     <p className="method-sources">Documentação: <a href="https://aif360.readthedocs.io/en/stable/modules/algorithms.html" target="_blank" rel="noreferrer">AIF360</a> · <a href="https://fairlearn.org/v0.13/api_reference/generated/fairlearn.reductions.GridSearch.html" target="_blank" rel="noreferrer">Fairlearn GridSearch</a> · <a href="https://arxiv.org/abs/1801.07593" target="_blank" rel="noreferrer">Aprendizado adversarial</a></p>
   </article>;

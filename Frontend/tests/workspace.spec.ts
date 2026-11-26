@@ -20,7 +20,7 @@ test('result sections preserve metric selection, context and keyboard navigation
   await page.getByRole('tab', { name: 'Desempenho', exact: true }).click();
   await page.getByLabel('Medida de desempenho').selectOption('precision');
   await page.getByRole('tab', { name: 'Equidade', exact: true }).click();
-  await expect(page.getByText('Disparate Impact · DI', { exact: true })).toBeVisible();
+  await expect(page.locator('#entender-equidade .fairness-metrics').getByText('Disparate Impact · DI', { exact: true })).toBeVisible();
   await page.getByRole('tab', { name: 'Desempenho', exact: true }).click();
   await expect(page.getByLabel('Medida de desempenho')).toHaveValue('precision');
   await page.getByRole('tab', { name: 'Desempenho', exact: true }).press('ArrowRight');
@@ -48,12 +48,12 @@ test('configuration survives modes, navigation, refresh and return from the save
   await page.getByRole('button', { name: 'Evadido', exact: false }).click();
   await page.getByRole('button', { name: 'Confirmar resultado' }).click();
   await page.getByLabel('Nome da análise').fill('Análise com rascunho preservado');
-  await page.getByRole('button', { name: 'Modo simples', exact: true }).click();
+  await page.getByRole('button', { name: 'Modo técnico', exact: true }).click();
   await page.getByLabel('Limiar de classificação', { exact: false }).fill('1.2');
   await expect(page.getByRole('alert')).toContainText('entre 0,01 e 0,99');
   await expect(page.getByRole('button', { name: 'Treinar e analisar', exact: true })).toBeDisabled();
   await page.getByLabel('Limiar de classificação', { exact: false }).fill('0.42');
-  await page.getByRole('button', { name: 'Modo técnico', exact: true }).click();
+  await page.getByRole('button', { name: 'Modo simples', exact: true }).click();
   await expect(page.getByLabel('Nome da análise')).toHaveValue('Análise com rascunho preservado');
   await page.getByRole('navigation', { name: 'Navegação principal' }).getByRole('link', { name: 'Bases de dados' }).click();
   await page.getByRole('link', { name: /rascunho-a.csv/ }).click();
@@ -92,10 +92,10 @@ test('mobile navigation is accessible and an API failure can be retried', async 
   await expect(page.getByRole('heading', { name: 'Análises salvas' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
   await page.screenshot({ path: 'test-results/workspace-mobile.png', fullPage: true });
-  await page.route('**/datasets?*', route => route.fulfill({ status: 503, json: { detail: 'A base está temporariamente indisponível.' } }));
+  await page.route('**/dataset-catalog?*', route => route.fulfill({ status: 503, json: { detail: 'A base está temporariamente indisponível.' } }));
   await page.goto('/datasets');
   await expect(page.getByRole('alert')).toContainText('temporariamente indisponível');
-  await page.unroute('**/datasets?*');
+  await page.unroute('**/dataset-catalog?*');
   await page.getByRole('button', { name: 'Tentar novamente' }).click();
   await expect(page.getByRole('alert')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Bases de alunos' })).toBeVisible();

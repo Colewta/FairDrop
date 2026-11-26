@@ -20,8 +20,9 @@ export function useResource<T>(path: string | null) {
     loading: Boolean(path && state.key !== key), reload: () => setRevision(value => value + 1) };
 }
 
-export async function uploadDataset(file: File) {
+export async function uploadDataset(file: File, name?: string) {
   const form = new FormData(); form.append('file', file);
+  if (name?.trim()) form.append('name', name.trim());
   return (await api.post<DatasetRecord>('/datasets', form)).data;
 }
 export async function startTraining(config: TrainingConfig) {

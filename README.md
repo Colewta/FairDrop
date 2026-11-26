@@ -3,6 +3,15 @@
 Plataforma local de previsão, explicação e avaliação de equidade. Envie um histórico,
 confirme o resultado que quer identificar e aplique o modelo salvo a uma base atual.
 
+A interface atual organiza o trabalho em **Visão geral**, **Bases de dados**,
+**Análises** e **Alunos e riscos**. Consulte o [relatório de UI/UX](UI_UX_REFACTOR.md)
+para as mudanças, compatibilidade dos registros anteriores e validações.
+
+Em **Bases de dados**, pesquise e ordene os arquivos. **Gerenciar** permite
+renomear, consultar vínculos e exportar uma cópia tratada com IDs reconhecidos
+ocultos. Bases usadas por análises ou treinamentos não podem ser excluídas.
+Arquivos idênticos oferecem reutilização ou importação como nova versão.
+
 ## Quero experimentar agora
 
 No Windows, abra **`Iniciar FairDrop.cmd`** nesta pasta. O iniciador prepara as
@@ -10,26 +19,27 @@ dependências quando necessário e abre a aplicação em **http://localhost:5173
 Pré-requisitos: Python 3.12 e Node.js 22. O primeiro preparo precisa de internet;
 as análises e previsões funcionam localmente.
 
-Na página inicial, clique **Experimentar com dados de exemplo**. Dois modelos
+Na página inicial, clique **Abrir avaliação de exemplo**. Dois modelos
 pré-treinados e uma turma fictícia de 30 alunos já acompanham o projeto.
 Abra **Revisar aluno** para ver a probabilidade e os fatores associados.
 Os modelos demonstrativos servem para conhecer a aplicação, não para decisões reais.
 
 ## Quero usar minha base
 
-1. Na página inicial, escolha **Começar com minha base**.
-2. Selecione ou arraste um CSV, XLSX, XLS, TXT ou TSV e clique **Importar e conferir**.
+1. Na página inicial, escolha **Importar minha base**.
+2. Selecione ou arraste um CSV, XLSX, XLS, TXT ou TSV e clique **Importar arquivo**.
 3. Confira a prévia e as correções de formato/cabeçalho informadas na tela.
 4. Confirme a coluna com o resultado conhecido e a situação que merece atenção.
    Se o resultado for um número contínuo, escolha uma faixa (por exemplo, renda ≥ 50000).
-5. Clique **Criar minha análise**. O FairDrop prepara os dados, compara os quatro
+5. Clique **Treinar e analisar**. O FairDrop prepara os dados, compara os quatro
    algoritmos e salva o modelo recomendado automaticamente.
-6. Na ficha do modelo, clique **Continuar com uma base atual**. Envie os mesmos
+6. Na ficha do modelo, clique **Avaliar alunos atuais**. Envie os mesmos
    campos de informação; a coluna do resultado não é necessária.
 7. Filtre os casos por risco, curso ou turma e abra cada aluno para revisão. Enviar novos lotes
    com o mesmo identificador acrescenta observações ao histórico.
 
-O **Modo técnico** abre detalhes de features, grupos, limiares, calibração,
+O seletor **Simples / Técnico** muda a apresentação, preservando os dados.
+O modo técnico abre detalhes de atributos, grupos, limiares, calibração,
 validação cruzada e métricas. O modo simples usa configurações documentadas abaixo.
 
 ## Tratamento automático de dados incompletos

@@ -1,25 +1,55 @@
 import logging
+import json
 from threading import Semaphore
 
-from app.core.config import MODEL_VERSION
+from app.core.config import MODEL_VERSION, RANDOM_STATE
+from importlib.metadata import version, PackageNotFoundError
 from app.schemas.dataset import DatasetError
 from app.schemas.platform import ModelCard, TrainingConfig
 from app.services.automl import AutoMLService
 from app.services.explainability import SHAPExplainer
 from app.services.model_registry import ArtifactStore, ModelRegistry
 from app.services.repository import Repository, new_id, now
+from app.services.dataset_usage import using_dataset
+from app.services.bias_mitigation import core_pipeline
 
 logger = logging.getLogger(__name__)
 training_slots = Semaphore(1)
 
 
-def train_and_save(repository: Repository, config: TrainingConfig) -> ModelCard:
+def training_metadata(model) -> dict:
+    versions = {}
+    for name in ("scikit-learn", "aif360", "fairlearn", "numpy", "pandas"):
+        try:
+            versions[name] = version(name)
+        except PackageNotFoundError:
+            versions[name] = None
+    pipeline = core_pipeline(model)
+    estimator = pipeline.named_steps["model"]
+    parameters = {}
+    for name, value in estimator.get_params(deep=False).items():
+        try:
+            parameters[name] = json.loads(json.dumps(value, allow_nan=False))
+        except (TypeError, ValueError):
+            continue
+    return {"random_state": RANDOM_STATE, "split_method": "stratified_random_60_20_20", "versions": versions,
+            "estimator_class": type(estimator).__name__, "model_parameters": parameters,
+            "preprocessing_steps": {name: type(step).__name__ for name, step in pipeline.steps if name != "model"}}
+
+
+def train_and_save(repository: Repository, config: TrainingConfig, run_id: str | None = None) -> ModelCard:
+    with using_dataset(repository, config.dataset_id, run_id):
+        return _train_and_save(repository, config)
+
+
+def _train_and_save(repository: Repository, config: TrainingConfig) -> ModelCard:
     dataset = repository.get("datasets", config.dataset_id)
     df = ArtifactStore(repository).load("datasets", dataset["id"], "dataset.joblib")
     with training_slots:
         output = AutoMLService().train(df, config)
         explanation = SHAPExplainer().explain(output.model, output.background, output.background, global_mode=True)
-        card = ModelCard(id=new_id(), institution_id=repository.institution_id, version=MODEL_VERSION,
+        card = ModelCard(id=new_id(), institution_id=repository.institution_id, version=MODEL_VERSION, is_demo=bool(dataset.get("is_demo")),
+            training_metadata=training_metadata(output.model),
             name=config.name, created_at=now(), dataset_id=dataset["id"], dataset_name=dataset["name"],
             target=config.target, positive_class=config.positive_class, classes=output.classes,
             features=output.features, feature_schema=output.feature_schema, excluded_features=output.excluded,
@@ -45,7 +75,7 @@ def execute_training_run(repository: Repository, run_id: str, config: TrainingCo
     run["status"] = "running"
     repository.put("training_runs", run)
     try:
-        card = train_and_save(repository, config)
+        card = train_and_save(repository, config, run_id)
         run.update(status="completed", model_id=card.id)
     except Exception as exc:
         logger.error("Treinamento falhou: run_id=%s exception_type=%s", run_id, type(exc).__name__)

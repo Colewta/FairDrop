@@ -3,19 +3,22 @@ import type { Metrics } from '../../types/platform';
 import { learningMetrics, testCounts } from '../../services/metricEducation';
 import { percent } from '../../services/format';
 import MetricExplorer from './MetricExplorer';
+import MetricGrid from './MetricGrid';
+import ConfusionMatrix from './ConfusionMatrix';
+import EvaluationCharts from './EvaluationCharts';
 
-export default function LearningMetricsPanel({ metrics, threshold, outcome }: {
-  metrics: ModelMetrics & Partial<Metrics>; threshold?: number; outcome?: string;
+export default function LearningMetricsPanel({ metrics, threshold, outcome, technical = false }: {
+  metrics: ModelMetrics & Partial<Metrics>; threshold?: number; outcome?: string; technical?: boolean;
 }) {
   const counts = testCounts(metrics);
   return <article className="summary-card" id="entender-desempenho">
     <span className="section-kicker">Desempenho · etapa 1</span>
     <h3>Desempenho do modelo</h3>
-    <p>Compare os acertos e os erros. Escolha uma medida abaixo para entender seu resultado.</p>
-    {outcome && <p>Nesta análise, usamos o nome <strong>resultado de risco</strong> a situação <strong>{outcome}</strong>. Um alerta é um aviso do sistema sobre essa situação. Já um caso real é um registro do histórico em que ela aconteceu. Compare os dois para saber quantos avisos estavam certos e quantos casos passaram sem aviso.</p>}
-    {counts && <div className="outcome-counts" aria-label="Acertos e erros em registros"><p><strong>{counts.tp}</strong> casos de risco com alerta</p><p><strong>{counts.fn}</strong> casos de risco sem alerta</p><p><strong>{counts.fp}</strong> falsos alertas</p><p><strong>{counts.tn}</strong> registros sem o resultado e sem alerta</p></div>}
-    <MetricExplorer metrics={learningMetrics(metrics)} label="Medida de desempenho" />
-    <details><summary>Probabilidades e critérios de avaliação</summary>    <p>O FairDrop aprende com exemplos do passado: informações dos alunos e o que aconteceu com eles. O que ele aprende fica salvo em um modelo, usado depois para estimar novas situações. Esse processo é chamado aprendizado de máquina, ou ML. Aqui você vê como ele se saiu com registros que ficaram de fora do aprendizado.</p>
+    <p className="muted">Teste separado do aprendizado. Resultado positivo: <strong>{outcome ?? 'situação acompanhada'}</strong>{threshold !== undefined && <> · alerta a partir de {percent(threshold)}</>}.</p>
+    <MetricGrid metrics={metrics} technical={technical}/>
+    {counts && <p className="compact-meta">{counts.total} registros no teste · {counts.positives} com o resultado · {counts.negatives} sem o resultado.</p>}
+    <div className="analytics-split"><ConfusionMatrix metrics={metrics} outcome={outcome}/><section className="metric-glossary"><h4>Consultar uma medida</h4>    <MetricExplorer metrics={learningMetrics(metrics)} label="Medida de desempenho" />
+    </section></div>{'brier_score' in metrics && <details className="evaluation-details"><summary>Curvas de avaliação, distribuição e calibração</summary><EvaluationCharts metrics={metrics as Metrics}/></details>}<details><summary>Probabilidades e critérios de avaliação</summary>    <p>O FairDrop aprende com exemplos do passado: informações dos alunos e o que aconteceu com eles. O que ele aprende fica salvo em um modelo, usado depois para estimar novas situações. Esse processo é chamado aprendizado de máquina, ou ML. Aqui você vê como ele se saiu com registros que ficaram de fora do aprendizado.</p>
       <p><strong>Probabilidade:</strong> é uma chance estimada a partir do histórico. Se o sistema estiver bem ajustado, entre muitos casos com previsão perto de 70%, esperamos que a situação aconteça em cerca de 70 de cada 100. Isso não diz com certeza o que acontecerá com um aluno específico.</p>
       <p><strong>Limite de alerta (limiar):</strong> é a marca a partir da qual o sistema emite um aviso. Uma previsão de 60% gera alerta se a marca for 50%, mas não gera se ela for 70%. {threshold !== undefined && <>Neste modelo, a avaliação usa alerta a partir de <strong>{percent(threshold)}</strong>. </>}Baixar a marca pode ajudar a encontrar mais casos e também gerar mais falsos avisos. As faixas baixo, médio e alto são outra divisão: servem para organizar a revisão dos alunos.</p>
       <p><strong>Treino, validação e teste:</strong> são três partes diferentes do histórico. O treino serve para aprender. A validação compara as opções e escolhe uma delas. O teste confere a escolhida em exemplos que não participaram dessas duas etapas. Os resultados desta ficha vêm dessa última parte.</p>

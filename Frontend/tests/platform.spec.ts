@@ -93,7 +93,7 @@ test('historical upload, training, current students, explanation and dashboard',
   await page.getByRole('link', { name: 'Visão geral', exact: true }).click();
   await expect(page.getByText('Faixas de risco da última avaliação')).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByText('Baixo risco', { exact: true }).scrollIntoViewIfNeeded();
+  await page.getByRole('link', { name: 'Baixo: 2 alunos' }).scrollIntoViewIfNeeded();
   await expect(page.getByRole('link', { name: 'Baixo: 2 alunos' })).toBeVisible();
   await page.screenshot({ path: 'test-results/mobile-dashboard.png', fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
@@ -131,7 +131,7 @@ test('a first-time user can explore saved models without uploading a file', asyn
 
 test('a tutor can compare original and reweighed models', async ({ page }) => {
   await page.goto('/models');
-  await page.getByRole('link', { name: /Exemplo pronto · acompanhamento acadêmico/ }).filter({ hasText: 'Exemplo com dados fictícios' }).click();
+  await page.getByRole('link', { name: 'Exemplo pronto · acompanhamento acadêmico', exact: true }).click();
   await page.getByRole('tab', { name: 'Mitigação', exact: true }).click();
   await page.getByRole('button', { name: 'Comparar com reponderação' }).click();
   await page.waitForURL(/\/models\/[a-f0-9]+$/, { timeout: 150000 });
@@ -148,7 +148,7 @@ test('a tutor can apply resampling and export an experiment', async ({ page }) =
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/models');
-  await page.getByRole('link', { name: /Exemplo pronto · acompanhamento acadêmico/ }).filter({ hasText: 'Exemplo com dados fictícios' }).click();
+  await page.getByRole('link', { name: 'Exemplo pronto · acompanhamento acadêmico', exact: true }).click();
   await page.getByRole('tab', { name: 'Mitigação', exact: true }).click();
   await expect(page.getByRole('radio')).toHaveCount(6);
   await page.getByRole('radio', { name: 'Reamostragem por grupo e resultado', exact: true }).check();

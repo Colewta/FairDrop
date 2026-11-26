@@ -1,7 +1,25 @@
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Link, NavLink, useLocation } from 'react-router-dom';
-import { useSessionDraft } from '../../services/useSessionDraft';
+import { Link, useLocation } from 'react-router-dom';
+import { usePreference } from '../../services/useSessionDraft';
+import { WorkflowContext } from '../../services/workflow';
+
+function WorkflowProgress() {
+  const { workflow } = useContext(WorkflowContext);
+  const location = useLocation();
+  if (!workflow || workflow.path !== location.pathname) return <details className="sidebar-guide"><summary>Como começar</summary><p>Importe um histórico, configure a análise e confira desempenho e equidade. Depois, compare uma técnica de mitigação.</p><Link to="/datasets/new">Importar histórico →</Link></details>;
+  const current = { import: 0, configure: 1, result: 2, mitigation: 3 }[workflow.kind];
+  const steps = [
+    { label: 'Importar histórico', done: !!workflow.datasetId, to: workflow.datasetId ? `/datasets/${workflow.datasetId}` : '/datasets/new', available: true },
+    { label: 'Configurar e executar', done: !!workflow.modelId && !['queued','running'].includes(workflow.runStatus ?? ''), to: `/datasets/${workflow.datasetId}${workflow.modelId?`?from_model=${workflow.modelId}`:''}`, available: !!workflow.datasetId },
+    { label: 'Conferir resultados', done: !!workflow.modelId, to: `/models/${workflow.modelId}`, available: !!workflow.modelId },
+    { label: 'Testar mitigação', done: !!workflow.hasExperiment, to: `/models/${workflow.modelId}?section=mitigation`, available: !!workflow.modelId },
+  ];
+  return <div className="sidebar-guide contextual-progress" aria-label="Progresso da análise"><span className="sidebar-caption">Análise em andamento</span><ol>{steps.map((s,i)=> {
+    const state = i === current ? 'Atual' : s.done ? 'Concluída' : s.available ? 'Pendente' : 'Indisponível';
+    return <li key={s.label} data-state={state} aria-current={i===current?'step':undefined}><span aria-hidden="true">{i === current ? '●' : s.done ? '✓' : '○'}</span>{s.available?<Link to={s.to}>{s.label}<small>{state}</small></Link>:<span>{s.label}<small>{state}</small></span>}</li>;
+  })}</ol>{workflow.runStatus === 'running' && <p role="status">Treinamento em execução</p>}</div>;
+}
 
 function Icon({ kind }: { kind: string }) {
   const paths: Record<string, ReactNode> = {
@@ -17,11 +35,12 @@ function Icon({ kind }: { kind: string }) {
 
 export default function AppShell({ children, technical, onMode }: { children: ReactNode; technical: boolean; onMode: () => void }) {
   const location = useLocation();
-  const [collapsed, setCollapsed] = useSessionDraft('sidebar-collapsed', false);
+  const [collapsed, setCollapsed] = usePreference('sidebar-collapsed', false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [compact, setCompact] = useState(() => window.matchMedia('(max-width: 760px)').matches);
   const area = location.pathname.startsWith('/datasets') ? 'Bases de dados' : location.pathname.startsWith('/models') ? 'Análises' : /^\/(predictions|students)/.test(location.pathname) ? 'Alunos e riscos' : 'Visão geral';
   useEffect(() => { document.title = `${area} · FairDrop`; }, [area]);
+  useEffect(() => { window.scrollTo(0,0); }, [location.pathname]);
   useEffect(() => {
     const query = window.matchMedia('(max-width: 760px)');
     function resize(event: MediaQueryListEvent) { setCompact(event.matches); setMobileOpen(false); }
@@ -36,15 +55,15 @@ export default function AppShell({ children, technical, onMode }: { children: Re
     return () => window.removeEventListener('keydown', escape);
   }, [mobileOpen]);
   const links = [{ to: '/', name: 'Visão geral', icon: 'home' }, { to: '/datasets', name: 'Bases de dados', icon: 'data' }, { to: '/models', name: 'Análises', icon: 'chart' }, { to: '/predictions', name: 'Alunos e riscos', icon: 'people' }];
-  return <div className={`platform-shell ${collapsed ? 'sidebar-collapsed' : ''} ${mobileOpen ? 'sidebar-open' : ''}`}>
+  return <div className={`platform-shell ${collapsed ? 'sidebar-collapsed' : ''} ${mobileOpen ? 'sidebar-open' : ''}`} onClickCapture={event=>{if(compact&&event.target instanceof Element&&event.target.closest('a')){setMobileOpen(false);window.requestAnimationFrame(()=>document.getElementById('main-content')?.focus({preventScroll:true}));}}}>
     <a className="skip-link" href="#main-content">Ir para o conteúdo</a>
     <header className="workspace-header"><div className="header-brand"><button className="sidebar-toggle" aria-label={mobileOpen ? 'Fechar menu' : 'Abrir ou recolher menu'} aria-expanded={compact ? mobileOpen : !collapsed} aria-controls="workspace-sidebar" onClick={() => { if (compact) setMobileOpen(!mobileOpen); else setCollapsed(!collapsed); }}><Icon kind="menu" /></button><Link to="/" className="platform-brand"><span>FD</span>FairDrop</Link></div>
       <div className="header-location"><span>Área de trabalho</span><strong>{area}</strong></div>
-      <div className="header-actions"><button className="mode-control" aria-pressed={technical} title="Exibir ou recolher detalhes técnicos. Suas configurações são mantidas." onClick={onMode}>{technical ? 'Modo técnico' : 'Modo simples'}</button><Link to="/datasets/new" className="primary-button" aria-label="Nova análise"><Icon kind="plus" /><span>Nova análise</span></Link></div>
+      <div className="header-actions"><div className="segmented mode-control" role="group" aria-label="Modo de visualização"><button aria-label="Modo simples" aria-pressed={!technical} onClick={() => { if (technical) onMode(); }}>Simples</button><button aria-label="Modo técnico" aria-pressed={technical} onClick={() => { if (!technical) onMode(); }}>Técnico</button></div><Link to="/datasets/new" className="primary-button" aria-label="Nova análise"><Icon kind="plus" /><span>Nova análise</span></Link></div>
     </header>
     {mobileOpen && <button className="sidebar-overlay" aria-label="Fechar menu lateral" onClick={() => setMobileOpen(false)} />}
-    <aside className="workspace-sidebar" id="workspace-sidebar" aria-label="Menu lateral"><span className="sidebar-caption">Navegação</span><nav aria-label="Navegação principal">{links.map(item => <NavLink key={item.to} to={item.to} end={item.to === '/'} aria-label={item.name} title={collapsed ? item.name : undefined} onClick={() => setMobileOpen(false)}><Icon kind={item.icon} /><span>{item.name}</span></NavLink>)}</nav>
-      <div className="sidebar-guide"><span className="sidebar-caption">Seu fluxo de análise</span><ol><li>Importar o histórico</li><li>Configurar e executar</li><li>Conferir os resultados</li><li>Testar mitigação</li></ol><Link to="/datasets/new" onClick={() => setMobileOpen(false)}>Começar uma análise <span aria-hidden="true">↗</span></Link></div>
+    <aside className="workspace-sidebar" id="workspace-sidebar" aria-label="Menu lateral"><span className="sidebar-caption">Navegação</span><nav aria-label="Navegação principal">{links.map(item => { const active=item.to==='/'?['/','/dashboard'].includes(location.pathname):location.pathname.startsWith(item.to)||(item.to==='/predictions'&&location.pathname.startsWith('/students/'));return <Link key={item.to} to={item.to} className={active?'active':undefined} aria-current={active?'location':undefined} aria-label={item.name} title={collapsed ? item.name : undefined} onClick={() => setMobileOpen(false)}><Icon kind={item.icon} /><span>{item.name}</span></Link>;})}</nav>
+      <WorkflowProgress />
       <div className="sidebar-foot"><span className="sidebar-mark">FD</span><div><strong>FairDrop</strong><small>Análise e mitigação de vieses</small></div></div>
     </aside>
     <main id="main-content" className="platform-content" tabIndex={-1}>{children}<footer className="platform-footer">FairDrop · Apoio à análise educacional. Confira cada caso antes de decidir um encaminhamento.</footer></main>

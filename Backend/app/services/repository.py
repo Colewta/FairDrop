@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import unicodedata
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -9,7 +10,7 @@ from uuid import UUID, uuid4
 from itertools import islice
 from collections.abc import Iterable
 
-from sqlalchemy import JSON, Column, Float, Integer, MetaData, String, Table, create_engine, delete, func, select, update
+from sqlalchemy import JSON, Column, Float, Integer, MetaData, String, Table, create_engine, delete, event, func, select, update
 
 from app.core import config
 from app.schemas.dataset import DatasetError
@@ -42,12 +43,19 @@ def checked_id(value: str) -> str:
         raise DatasetError("NOT_FOUND", "Registro não encontrado.", 404) from exc
 
 
+def fold_text(value) -> str:
+    return "".join(c for c in unicodedata.normalize("NFKD", str(value or "")) if not unicodedata.combining(c)).casefold()
+
+
 class Repository:
     def __init__(self, root: Path, institution_id: str):
         self.root = root.resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         self.institution_id = institution_id
         self.engine = create_engine(f"sqlite:///{(self.root / 'fairdrop.sqlite3').as_posix()}", connect_args={"timeout": 30})
+        @event.listens_for(self.engine, "connect")
+        def configure_search(connection, _):
+            connection.create_function("fairdrop_fold", 1, fold_text, deterministic=True)
         metadata.create_all(self.engine)
 
     def put(self, kind: str, payload: dict) -> None:
@@ -82,6 +90,53 @@ class Repository:
         with self.engine.begin() as connection:
             connection.execute(delete(table).where(table.c.id == checked_id(identifier), table.c.institution_id == self.institution_id))
 
+    def count(self, kind: str, *filters) -> int:
+        table = resources[kind]
+        with self.engine.connect() as connection:
+            return connection.execute(select(func.count()).select_from(table).where(
+                table.c.institution_id == self.institution_id, *filters)).scalar_one()
+
+    def dataset_catalog(self, query: str, sort: str, descending: bool, source: str, limit: int, offset: int) -> dict:
+        table, models = resources["datasets"], resources["models"]
+        conditions = [table.c.institution_id == self.institution_id]
+        if query:
+            conditions.append(func.fairdrop_fold(table.c.payload["name"].as_string()).contains(fold_text(query), autoescape=True)
+                              | func.fairdrop_fold(table.c.payload["original_name"].as_string()).contains(fold_text(query), autoescape=True))
+        if source != "all":
+            conditions.append(func.coalesce(table.c.payload["is_demo"].as_boolean(), False) == (source == "demo"))
+        fields = {"name": func.fairdrop_fold(table.c.payload["name"].as_string()), "created_at": table.c.created_at,
+                  "rows": table.c.payload["profile"]["rows"].as_integer(), "columns": table.c.payload["profile"]["columns"].as_integer()}
+        field = fields[sort]
+        linked = select(func.count()).select_from(models).where(models.c.institution_id == self.institution_id,
+                    models.c.payload["dataset_id"].as_string() == table.c.id).scalar_subquery()
+        with self.engine.connect() as connection:
+            total = connection.execute(select(func.count()).select_from(table).where(*conditions)).scalar_one()
+            rows = connection.execute(select(table.c.payload, linked).where(*conditions)
+                    .order_by(field.desc() if descending else field.asc(), table.c.id).limit(limit).offset(offset)).all()
+        items = []
+        for payload, model_count in rows:
+            profile = payload["profile"]
+            items.append({**{key: payload.get(key) for key in ("id", "name", "original_name", "created_at", "is_demo")},
+                          "rows": profile["rows"], "columns": profile["columns"], "format": profile.get("import_info", {}).get("format"),
+                          "missing_percentage": profile["missing_cells_percentage"], "model_count": model_count})
+        return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+    def dataset_duplicates(self, digest: str) -> list[dict]:
+        table = resources["datasets"]
+        with self.engine.connect() as connection:
+            return list(connection.execute(select(table.c.payload).where(table.c.institution_id == self.institution_id,
+                table.c.payload["sha256"].as_string() == digest).order_by(table.c.created_at.desc())).scalars())
+
+    def dataset_dependencies(self, identifier: str) -> dict:
+        models, runs = resources["models"], resources["training_runs"]
+        from app.services.dataset_usage import active_users
+        with self.engine.connect() as connection:
+            active = set(connection.execute(select(runs.c.id).where(runs.c.institution_id == self.institution_id,
+                runs.c.payload["config"]["dataset_id"].as_string() == checked_id(identifier),
+                runs.c.payload["status"].as_string().in_(["queued", "running"]))).scalars())
+        return {"models": self.count("models", models.c.payload["dataset_id"].as_string() == checked_id(identifier)),
+                "active_runs": len(active | active_users(self, checked_id(identifier)))}
+
     def save_batch(self, batch: dict, rows: Iterable[dict]) -> None:
         table = resources["prediction_batches"]
         with self.engine.begin() as connection:
@@ -91,7 +146,7 @@ class Repository:
                 connection.execute(predictions.insert(), chunk)
 
     def prediction_page(self, batch_id: str, page: int, size: int, risk: str | None, query: str = "",
-                        group_column: str | None = None, group_value: str | None = None) -> tuple[int, list[dict]]:
+                        group_column: str | None = None, group_value: str | None = None, sort: str = "risk_desc") -> tuple[int, list[dict]]:
         batch = self.get("prediction_batches", batch_id)
         conditions = [predictions.c.institution_id == self.institution_id, predictions.c.batch_id == checked_id(batch_id)]
         if risk:
@@ -104,7 +159,9 @@ class Repository:
             conditions.append(predictions.c.payload["groups"][group_column].as_string() == group_value)
         with self.engine.connect() as connection:
             total = connection.execute(select(func.count()).select_from(predictions).where(*conditions)).scalar_one()
-            items = connection.execute(select(predictions.c.payload).where(*conditions).order_by(predictions.c.probability.desc(), predictions.c.id).limit(size).offset((page - 1) * size)).scalars().all()
+            order = {"risk_desc": predictions.c.probability.desc(), "risk_asc": predictions.c.probability.asc(),
+                     "identifier": predictions.c.student_id.asc()}[sort]
+            items = connection.execute(select(predictions.c.payload).where(*conditions).order_by(order, predictions.c.id).limit(size).offset((page - 1) * size)).scalars().all()
         return total, items
 
     def student(self, identifier: str) -> dict:
