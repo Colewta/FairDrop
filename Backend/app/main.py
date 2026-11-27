@@ -15,6 +15,7 @@ from app.schemas.dataset import DatasetError
 from app.services.repository import get_repository
 from app.services.demo import install_demo
 from app.routes.demo import router as demo_router
+from app.services.model_registry import ArtifactStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -29,6 +30,11 @@ async def lifespan(app: FastAPI):
         if run["status"] in {"queued", "running"}:
             run.update(status="failed", error="Treinamento interrompido pelo reinício do serviço. Inicie uma nova execução.")
             repository.put("training_runs", run)
+    for run in repository.list("dataset_imports", 10000):
+        if run["status"] in {"queued", "running"}:
+            run.update(status="failed", error="A leitura foi interrompida pelo reinício do serviço. Importe o arquivo novamente.")
+            repository.put("dataset_imports", run)
+        ArtifactStore(repository).path("dataset_imports", run["id"], "upload.bin").unlink(missing_ok=True)
     yield
 
 

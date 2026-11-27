@@ -214,6 +214,18 @@ class TrainingRun(BaseModel):
     created_at: str
     model_id: str | None = None
     error: str | None = None
+    progress: int | None = Field(default=None, ge=0, le=100)
+    stage: str | None = None
+
+
+class DatasetImportRun(BaseModel):
+    id: str
+    status: Literal["queued", "running", "completed", "failed"]
+    created_at: str
+    progress: int = Field(default=0, ge=0, le=100)
+    stage: str = "Arquivo recebido. Aguardando leitura."
+    dataset_id: str | None = None
+    error: str | None = None
 
 
 class StudentPrediction(BaseModel):

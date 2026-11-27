@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, getApiErrorMessage } from './api';
-import type { DatasetRecord, PredictionBatch, TrainingConfig, TrainingRun } from '../types/platform';
+import type { DatasetImportRun, PredictionBatch, TrainingConfig, TrainingRun } from '../types/platform';
 
 export function useResource<T>(path: string | null) {
   const [revision, setRevision] = useState(0);
@@ -20,10 +20,12 @@ export function useResource<T>(path: string | null) {
     loading: Boolean(path && state.key !== key), reload: () => setRevision(value => value + 1) };
 }
 
-export async function uploadDataset(file: File, name?: string) {
+export async function uploadDataset(file: File, name?: string, onProgress?: (fraction: number) => void) {
   const form = new FormData(); form.append('file', file);
   if (name?.trim()) form.append('name', name.trim());
-  return (await api.post<DatasetRecord>('/datasets', form)).data;
+  return (await api.post<DatasetImportRun>('/dataset-imports', form, { onUploadProgress: event => {
+    if (event.total) onProgress?.(Math.min(1, event.loaded / event.total));
+  } })).data;
 }
 export async function startTraining(config: TrainingConfig) {
   return (await api.post<TrainingRun>('/training-runs', config)).data;

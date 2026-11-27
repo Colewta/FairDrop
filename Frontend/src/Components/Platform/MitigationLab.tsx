@@ -7,6 +7,7 @@ import MitigationComparison from './MitigationComparison';
 import { ErrorNotice, Loading } from './Common';
 import { GroupErrorTable } from './GroupErrorTable';
 import TrainingProgress from './TrainingProgress';
+import TaskProgress from './TaskProgress';
 import MitigationGuide from './MitigationGuide';
 import MitigationReading from './MitigationReading';
 
@@ -77,7 +78,8 @@ export default function MitigationLab({ model }: { model: ModelCard }) {
       </details>
       {eligibility && !eligibility.available && feature && <p className="notice" role="status">{eligibility?.reason}</p>}
       <div className="experiment-actions"><ErrorNotice message={error} /><button className="primary-button" disabled={busy || !!runId || options.loading || !eligibility?.available} onClick={() => void compare()}>{busy ? 'Iniciando experimento…' : method === 'reweighing' ? 'Comparar com reponderação' : 'Executar experimento'}</button></div>
-      {options.data && <details className="context-help"><summary>Como os requisitos são verificados</summary><p>{options.data.note}</p></details>}{runId && <><TrainingProgress id={runId} autoNavigate={autoNavigate} onStatus={run => setRunStatus(run.status)} />{(runStatus === 'completed' || runStatus === 'failed') && <button onClick={() => { setRunId(null); setAutoNavigate(false); }}>Preparar outro experimento</button>}</>}
+      {busy && <TaskProgress label="Progresso do experimento" value={0} stage="Conferindo se a técnica pode ser aplicada aos grupos escolhidos."/>}
+      {options.data && <details className="context-help"><summary>Como os requisitos são verificados</summary><p>{options.data.note}</p></details>}{runId && <><TrainingProgress id={runId} autoNavigate={autoNavigate} experiment onStatus={run => setRunStatus(run.status)} />{(runStatus === 'completed' || runStatus === 'failed') && <button onClick={() => { setRunId(null); setAutoNavigate(false); }}>Preparar outro experimento</button>}</>}
     </section></details>
     <details><summary>Outras ações para revisar os vieses</summary><MitigationGuide /></details>
     <p className="method-sources">Documentação: <a href="https://aif360.readthedocs.io/en/stable/modules/algorithms.html" target="_blank" rel="noreferrer">AIF360</a> · <a href="https://fairlearn.org/v0.13/api_reference/generated/fairlearn.reductions.GridSearch.html" target="_blank" rel="noreferrer">Fairlearn GridSearch</a> · <a href="https://arxiv.org/abs/1801.07593" target="_blank" rel="noreferrer">Aprendizado adversarial</a></p>

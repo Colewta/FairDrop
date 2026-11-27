@@ -19,7 +19,7 @@ metadata = MetaData()
 resources = {
     name: Table(name, metadata, Column("id", String, primary_key=True), Column("institution_id", String, index=True),
                 Column("created_at", String, index=True), Column("payload", JSON, nullable=False))
-    for name in ("institutions", "datasets", "training_runs", "models", "prediction_batches", "tutor_reviews")
+    for name in ("institutions", "datasets", "dataset_imports", "training_runs", "models", "prediction_batches", "tutor_reviews")
 }
 predictions = Table("student_predictions", metadata,
     Column("id", String, primary_key=True), Column("institution_id", String, index=True),

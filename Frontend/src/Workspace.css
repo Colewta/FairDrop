@@ -385,3 +385,22 @@ body { background:var(--bg-page); color:var(--text-main); }
 
 .platform-shell .recharts-label { fill:var(--text-soft); }
 @media(max-width:760px) { .confusion-grid th:first-child { width:28%; } }
+
+/* O preenchimento muda apenas quando há uma atualização de trabalho concluído. */
+.task-progress { min-width:0; padding:22px 24px; border:1px solid var(--line-soft); border-radius:10px; background:var(--bg-page); }
+.task-progress-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px; }
+.task-progress-heading > strong { color:var(--text-main); font-size:14px; font-weight:500; }
+.task-progress-value { flex-shrink:0; color:var(--brand-strong); font-size:28px; font-weight:600; line-height:1; letter-spacing:-.04em; font-variant-numeric:tabular-nums; }
+.task-progress-value small { margin-left:3px; font-size:15px; font-weight:400; }
+.task-progress-track { height:10px; border-radius:20px; overflow:hidden; background:var(--bg-surface-strong); box-shadow:inset 0 1px 3px #0003; }
+.task-progress-fill { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,#568f7a,var(--brand),var(--brand-strong)); box-shadow:0 0 12px #8ac8b026; transition:width .4s ease; }
+.task-progress-pending .task-progress-fill { width:0; }
+.platform-shell .task-progress-stage { margin:14px 0 0; color:var(--text-main); font-size:13px; line-height:1.5; overflow-wrap:anywhere; }
+.task-progress-note { display:block; margin-top:6px; color:var(--text-muted); font-size:12px; line-height:1.5; }
+.task-progress-failed .task-progress-value { color:var(--danger); }
+.task-progress-failed .task-progress-fill { background:var(--danger); box-shadow:none; }
+.task-progress-complete { border-color:#426252; }
+.training-progress .task-progress { margin:22px 0; }
+.import-layout > .task-progress { grid-column:1 / -1; }
+@media(max-width:760px) { .task-progress { padding:18px 16px; } .task-progress-value { font-size:25px; } }
+@media(prefers-reduced-motion:reduce) { .task-progress-fill { transition:none; } }

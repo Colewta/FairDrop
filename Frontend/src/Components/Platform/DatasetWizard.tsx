@@ -6,6 +6,7 @@ import { getApiErrorMessage } from '../../services/api';
 import { useSessionDraft } from '../../services/useSessionDraft';
 import { DatasetHealthCard, ErrorNotice, Loading, MetricCard } from './Common';
 import TrainingProgress from './TrainingProgress';
+import TaskProgress from './TaskProgress';
 import DataCleaningNotice from './DataCleaningNotice';
 import { usePublishWorkflow } from '../../services/workflow';
 
@@ -119,6 +120,7 @@ export default function DatasetWizard({ record, technical = false, initialConfig
         <ErrorNotice message={configIssue ?? error} /><div className="wizard-actions"><button disabled={busy || running} onClick={() => setDraft(current => ({ ...current, step: 1 }))}>Voltar</button><button className="primary-button" disabled={busy || running || updated.loading || !!updated.error || values.loading || !values.data || !features.length || !positive || !draft.name.trim() || !!values.error || !!configIssue} onClick={() => void train()}>{busy ? 'Iniciando…' : running ? 'Treinamento em andamento' : 'Treinar e analisar'}</button></div>
       </article>
     </>}
-    {draft.runId && <TrainingProgress key={draft.runId} id={draft.runId} autoNavigate={autoNavigate} onStatus={trainingStatus} />}
+    {busy && <TaskProgress label="Progresso da análise" value={0} stage="Conferindo a configuração para iniciar o treinamento."/>}
+    {!busy && draft.runId && <TrainingProgress key={draft.runId} id={draft.runId} autoNavigate={autoNavigate} onStatus={trainingStatus} />}
   </section>;
 }

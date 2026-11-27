@@ -18,6 +18,7 @@ from app.services.numeric import parse_numeric
 from app.services.bias_mitigation import ReweighedClassifier, core_pipeline, mitigation_report
 from app.services.mitigation_methods import MitigatedClassifier, FairLogisticClassifier
 from app.services.data_cleaning import add_issue, clean_feature_values, clean_identifiers, clean_table, cleaning_messages, finish_report, report_for
+from app.services.progress import ProgressCallback, report_progress
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,8 @@ class TrainingOutput:
 
 
 class AutoMLService:
-    def train(self, df: pd.DataFrame, config: TrainingConfig) -> TrainingOutput:
+    def train(self, df: pd.DataFrame, config: TrainingConfig, progress: ProgressCallback | None = None) -> TrainingOutput:
+        report_progress(progress, 6, "Preparando os registros para o treinamento.")
         if config.target not in df.columns:
             raise DatasetError("TARGET_NOT_FOUND", "A coluna de resultado selecionada não existe na base.")
         required = config.sensitive_features + ([config.identifier_column] if config.identifier_column else [])
@@ -78,6 +80,7 @@ class AutoMLService:
         trainval, test = train_test_split(working.index, test_size=0.2, stratify=y, random_state=RANDOM_STATE)
         train, validation = train_test_split(trainval, test_size=0.25, stratify=y.loc[trainval], random_state=RANDOM_STATE)
         # Inferências estatísticas que decidem features não consultam validação/teste.
+        report_progress(progress, 12, "Separando treino, validação e teste e conferindo as colunas.")
         profile = DatasetProfiler().profile(working.loc[train], config.target)
         identifiers = set(profile.potential_ids) | ({config.identifier_column} if config.identifier_column else set())
         sensitive = set(profile.potential_sensitive_features) | set(config.sensitive_features)
@@ -109,10 +112,22 @@ class AutoMLService:
         results = []
         fitted = {}
         failed = {}
-        for algorithm in dict.fromkeys(config.algorithms):
-            variants = ["baseline", config.mitigation] if config.mitigation != "none" else ["baseline"]
+        algorithms = list(dict.fromkeys(config.algorithms))
+        variants = ["baseline", config.mitigation] if config.mitigation != "none" else ["baseline"]
+        units_per_candidate = 3 if config.cv_folds else 2
+        total_units = len(algorithms) * len(variants) * units_per_candidate
+        completed_units = 0
+        labels = {"logistic": "Regressão Logística", "rf": "Random Forest", "knn": "KNN", "xgboost": "XGBoost"}
+
+        def candidate_progress(stage: str) -> None:
+            report_progress(progress, 20 + int(60 * completed_units / total_units), stage)
+
+        for algorithm in algorithms:
             for variant in variants:
                 key = (algorithm, variant)
+                candidate_end = completed_units + units_per_candidate
+                label = f"{labels[algorithm]} · {'sem mitigação' if variant == 'baseline' else 'com mitigação'}"
+                candidate_progress(f"Preparando {label}.")
                 try:
                     if variant in {"reweighing", "constraints"} and algorithm == "knn":
                         raise DatasetError("UNSUPPORTED_MITIGATION", "KNN não aceita pesos por registro; somente sua versão original foi avaliada.")
@@ -136,12 +151,17 @@ class AutoMLService:
                         model = CalibratedClassifierCV(model, method="sigmoid", cv=StratifiedKFold(3, shuffle=True, random_state=RANDOM_STATE))
                     cv = {}
                     if config.cv_folds:
+                        candidate_progress(f"Conferindo {label} em {config.cv_folds} divisões de validação cruzada.")
                         if y.loc[train].value_counts().min() < max(config.cv_folds, 5 if config.calibrate else 2):
                             raise ValueError("Insufficient class count for nested calibration/CV")
                         scores = cross_validate(model, training_frame, y.loc[train], cv=StratifiedKFold(config.cv_folds, shuffle=True, random_state=RANDOM_STATE),
                                                 scoring={"recall": "recall", "roc_auc": "roc_auc", "pr_auc": "average_precision"}, error_score="raise", n_jobs=1)
                         cv = {name[5:]: {"mean": float(value.mean()), "std": float(value.std())} for name, value in scores.items() if name.startswith("test_")}
+                        completed_units += 1
+                    candidate_progress(f"Treinando {label}.")
                     model.fit(training_frame, y.loc[train])
+                    completed_units += 1
+                    candidate_progress(f"Calculando os acertos, erros e diferenças entre grupos de {label}.")
                     metrics, prediction = evaluate_model(model, X_validation, y.loc[validation], config.threshold)
                     fairness = evaluator.evaluate(working.loc[validation], y.loc[validation], prediction)
                     score, components, weights = selector.score(metrics, fairness)
@@ -151,6 +171,8 @@ class AutoMLService:
                 except Exception as exc:
                     logger.warning("Algoritmo %s/%s falhou: %s", algorithm, variant, type(exc).__name__)
                     failed[f"{algorithm}:{variant}"] = str(exc) if isinstance(exc, DatasetError) else "Treino incompatível com a base ou configuração; revise amostras, calibração e validação cruzada."
+                completed_units = candidate_end
+                candidate_progress("Etapa de comparação concluída. Preparando a próxima avaliação.")
         if not results:
             raise DatasetError("ALL_MODELS_FAILED", "Nenhum algoritmo pôde ser treinado. Revise a quantidade de registros e as opções avançadas.")
         results.sort(key=lambda r: (-r.score, r.algorithm, r.variant))
@@ -163,6 +185,7 @@ class AutoMLService:
         algorithm = results[0].algorithm
         model = fitted[(algorithm, results[0].variant)]
         # Não reajustar após selecionar: mantém o modelo efetivamente avaliado e teste intacto.
+        report_progress(progress, 82, "Avaliando o modelo escolhido com os registros reservados para teste.")
         metrics, predictions = evaluate_model(model, working.loc[test, features], y.loc[test], config.threshold)
         fairness = evaluator.evaluate(working.loc[test], y.loc[test], predictions)
         core = core_pipeline(model)
@@ -184,6 +207,7 @@ class AutoMLService:
         if any(r.fairness.score is None for r in results):
             warnings.append("Fairness indisponível na seleção: pesos dos critérios disponíveis foram renormalizados e estão registrados.")
         from app.services.explanation_context import build_context
+        report_progress(progress, 86, "Reunindo as comparações entre grupos e os resultados da mitigação.")
         return TrainingOutput(model=model, algorithm=algorithm, comparison=results, failed=failed, features=features,
             feature_schema=core.named_steps["schema"].kinds_, excluded=[c for c in df.columns if c not in features],
             classes=sorted(y_text.unique()), metrics=metrics, fairness=fairness, feature_importance=importance,

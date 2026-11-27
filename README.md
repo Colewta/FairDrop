@@ -42,6 +42,21 @@ O seletor **Simples / Técnico** muda a apresentação, preservando os dados.
 O modo técnico abre detalhes de atributos, grupos, limiares, calibração,
 validação cruzada e métricas. O modo simples usa configurações documentadas abaixo.
 
+A importação, o treinamento e os experimentos de mitigação mostram uma barra
+de porcentagem com a etapa atual. O envio acompanha os bytes transferidos;
+a leitura e o treinamento avançam conforme etapas reais são concluídas.
+O percentual não estima minutos restantes: treinar um modelo ou calcular
+explicações pode demorar sem mudar a porcentagem. Os 100% só aparecem depois
+que o resultado foi salvo. Ao recarregar a página de importação, o acompanhamento
+da leitura em andamento é retomado na mesma aba do navegador.
+
+Para clientes da API, `POST /dataset-imports` devolve um ID para acompanhar por
+`GET /dataset-imports/{id}`. Treinos e experimentos usam os campos `progress`
+e `stage` de `GET /training-runs/{id}`. A importação síncrona em `POST /datasets`
+continua disponível. Se o serviço reiniciar, tarefas interrompidas são marcadas
+como falhas, preservando o último percentual, e os arquivos temporários de
+importação são removidos.
+
 ## Tratamento automático de dados incompletos
 
 A importação aproveita os registros utilizáveis e apresenta **Tratamento

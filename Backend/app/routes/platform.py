@@ -3,7 +3,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, Uplo
 from fastapi.responses import StreamingResponse
 
 from app.schemas.platform import (DatasetRecord, ModelCard, PredictionBatch, PredictionPage,
-                                  StudentDetail, TrainingConfig, TrainingRun, MitigationRequest, ScenarioRequest, TutorReview, DatasetRename)
+                                  StudentDetail, TrainingConfig, TrainingRun, MitigationRequest, ScenarioRequest, TutorReview, DatasetRename, DatasetImportRun)
 from app.schemas.dataset import DatasetError
 from app.services.dataset_profiler import DatasetProfiler
 from app.services.dataset_reader import read_upload
@@ -16,21 +16,22 @@ from app.services.dataset_usage import dataset_lock
 import pandas as pd
 from app.services.numeric import parse_numeric
 from app.services.mitigation_methods import METHODS
+from app.services.dataset_imports import save_dataset, stage_import, execute_import
 
 router = APIRouter(tags=["platform"])
 
 
-def save_dataset(repository: Repository, file: UploadFile, name: str | None = None) -> DatasetRecord:
-    if name is not None and not name.strip():
-        raise DatasetError("INVALID_DATASET_NAME", "Informe um nome para a base ou deixe o campo vazio.")
-    display_name = DatasetRename(name=name).name if name is not None else file.filename or "Base"
-    digest = upload_digest(file)
-    frame = read_upload(file)
-    record = DatasetRecord(id=new_id(), name=display_name, original_name=file.filename, sha256=digest,
-                           created_at=now(), profile=DatasetProfiler().profile(frame))
-    ArtifactStore(repository).save("datasets", record.id, "dataset.joblib", frame)
-    repository.put("datasets", record.model_dump(mode="json"))
-    return record
+@router.post("/dataset-imports", response_model=DatasetImportRun, status_code=202)
+def start_import(tasks: BackgroundTasks, file: UploadFile = File(...),
+                 name: str | None = Form(None, min_length=1, max_length=160), repository: Repository = Depends(get_repository)):
+    run = stage_import(repository, file, name)
+    tasks.add_task(execute_import, repository, run.id)
+    return run
+
+
+@router.get("/dataset-imports/{identifier}", response_model=DatasetImportRun)
+def get_import(identifier: str, repository: Repository = Depends(get_repository)):
+    return repository.get("dataset_imports", identifier)
 
 
 @router.post("/datasets", response_model=DatasetRecord, status_code=201)
@@ -136,7 +137,7 @@ def train_automl(config: TrainingConfig, repository: Repository = Depends(get_re
 def start_training(config: TrainingConfig, tasks: BackgroundTasks, repository: Repository = Depends(get_repository)):
     with dataset_lock:
         repository.get("datasets", config.dataset_id)
-        run = TrainingRun(id=new_id(), status="queued", created_at=now())
+        run = TrainingRun(id=new_id(), status="queued", created_at=now(), progress=0, stage="Na fila para iniciar o treinamento.")
         repository.put("training_runs", {**run.model_dump(), "config": config.model_dump(mode="json")})
     tasks.add_task(execute_training_run, repository, run.id, config)
     return run

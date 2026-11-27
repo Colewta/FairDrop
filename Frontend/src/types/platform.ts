@@ -92,7 +92,8 @@ export interface ModelCard {
   failed_algorithms: Record<string, string>; feature_importance: Record<string, number>; explanation: Explanation;
   split: Record<string, number>; warnings: string[]; limitations: string[];
 }
-export interface TrainingRun { id: string; status: 'queued' | 'running' | 'completed' | 'failed'; created_at: string; model_id: string | null; error: string | null }
+export interface TrainingRun { id: string; status: 'queued' | 'running' | 'completed' | 'failed'; created_at: string; model_id: string | null; error: string | null; progress?: number | null; stage?: string | null }
+export interface DatasetImportRun { id: string; status: TrainingRun['status']; created_at: string; dataset_id: string | null; error: string | null; progress: number; stage: string }
 export interface StudentPrediction {
   groups: Record<string, string>;
   id: string; student_id: string; batch_id: string; model_id: string; created_at: string;

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 // Apenas preferências e configuração; arquivos e dados dos alunos não entram no storage.
 export function useSessionDraft<T>(key: string, initial: T) {
@@ -30,6 +30,6 @@ export function usePreference(key: string, initial: boolean) {
 }
 export function useMemoryFile(key: string) {
   const [file, setFile] = useState<File | null>(() => files.get(key) ?? null);
-  function change(next: File | null) { if (next) files.set(key, next); else files.delete(key); setFile(next); }
+  const change = useCallback((next: File | null) => { if (next) files.set(key, next); else files.delete(key); setFile(next); }, [key]);
   return [file, change] as const;
 }
